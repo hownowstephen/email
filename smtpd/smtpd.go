@@ -41,7 +41,7 @@ func ListenAndServe(addr string, handler MessageHandler) error {
 			Rand:         rand.Reader,
 		}
 	} else {
-		fmt.Println("Could not load TLS keypair, %v", err)
+		log.Printf("Could not load TLS keypair, %v", err)
 	}
 
 	// Start listening for SMTP connections
@@ -122,7 +122,7 @@ ReadLoop:
 
 			if data, err := readData(conn); err == nil {
 
-				if message, err := email.NewMessage(data); err == nil {
+				if message, err := email.NewMessage([]byte(data)); err == nil {
 
 					if id, err := handler(message); err == nil {
 						write(conn, fmt.Sprintf("250 OK : queued as %v", id))

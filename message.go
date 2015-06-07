@@ -90,8 +90,8 @@ func parseBody(m *mail.Message) ([]byte, []*Part, error) {
 }
 
 // NewMessage creates a Message from a data blob
-func NewMessage(data string) (*Message, error) {
-	m, err := mail.ReadMessage(strings.NewReader(data))
+func NewMessage(data []byte) (*Message, error) {
+	m, err := mail.ReadMessage(bytes.NewBuffer(data))
 	if err != nil {
 		return nil, err
 	}

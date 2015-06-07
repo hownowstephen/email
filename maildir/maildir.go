@@ -1,17 +1,24 @@
 package maildir
 
+// a simple implementation of http://cr.yp.to/proto/maildir.html
+
 import (
     "crypto/rand"
     "encoding/hex"
     "fmt"
+    "io/ioutil"
     "os"
     "path"
+    "path/filepath"
     "strconv"
     "strings"
     "time"
 
     "github.com/hownowstephen/email"
 )
+
+// MessageHandler is a function for iterating through a maildir
+type MessageHandler func(*email.Message) error
 
 // Dir is a single directory containing maildir files
 type Dir struct {
@@ -21,9 +28,9 @@ type Dir struct {
     hostname string
 }
 
-func exists(path string) bool {
-    _, err := os.Stat(path)
-    return !os.IsExist(err)
+func exists(p string) bool {
+    _, err := os.Stat(p)
+    return err == nil
 }
 
 func NewDir(dir string) (*Dir, error) {
@@ -31,14 +38,14 @@ func NewDir(dir string) (*Dir, error) {
 
     base := path.Dir(dir)
     if !exists(base) {
-        if err := os.Mkdir(base, 0644); err != nil {
+        if err := os.MkdirAll(base, 0755); err != nil {
             return nil, err
         }
     }
 
-    for _, d := range []string{path.Join(base, "tmp"), path.Join(base, "cur"), path.Join(base, "new")} {
-        if !exists(base) {
-            if err := os.Mkdir(d, 0644); err != nil {
+    for _, d := range []string{filepath.Join(base, "tmp"), filepath.Join(base, "cur"), filepath.Join(base, "new")} {
+        if !exists(d) {
+            if err := os.Mkdir(d, 0755); err != nil {
                 return nil, err
             }
         }
@@ -49,17 +56,19 @@ func NewDir(dir string) (*Dir, error) {
         return nil, err
     }
 
+    // @TODO: Replace / with \057 and : with \072.
+
     return &Dir{base, 0, os.Getpid(), hostname}, nil
 }
 
-func (d *Dir) Write(m *email.Message) error {
+func (d *Dir) Write(m *email.Message) (string, error) {
 
     filename := d.makeID()
 
     tmpname := path.Join(d.dir, "tmp", filename)
     f, err := os.Create(tmpname)
     if err != nil {
-        return err
+        return "", err
     }
 
     // this will be in a weird order. is that a problem?
@@ -71,7 +80,53 @@ func (d *Dir) Write(m *email.Message) error {
     f.Write(m.RawBody)
     f.Close()
 
-    return os.Rename(tmpname, path.Join(d.dir, "new", filename))
+    return filename, os.Rename(tmpname, filepath.Join(d.dir, "new", filename))
+}
+
+// Open a single message from the dir
+func (d *Dir) Open(filename string) (*email.Message, error) {
+
+    var f *os.File
+    var err error
+
+    f, err = os.Open(path.Join(d.dir, "new", filename))
+    if err != nil {
+        matches, merr := filepath.Glob(filepath.Join(d.dir, "cur", filename) + "*")
+        if merr != nil {
+            return nil, merr
+        }
+
+        if len(matches) == 1 {
+            f, err = os.Open(matches[0])
+        } else {
+            return nil, fmt.Errorf("Too many matched files: %v", matches)
+        }
+    }
+
+    if err != nil {
+        return nil, err
+    }
+
+    defer f.Close()
+
+    b, err := ioutil.ReadAll(f)
+    if err != nil {
+        return nil, err
+    }
+
+    return email.NewMessage(b)
+}
+
+func (d *Dir) EachMessage(handler MessageHandler) error {
+    return filepath.Walk(d.dir, func(path string, info os.FileInfo, err error) error {
+
+        m, err := d.Open(info.Name())
+        if err != nil {
+            return err
+        }
+
+        return handler(m)
+    })
 }
 
 func (d *Dir) makeID() string {
