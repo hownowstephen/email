@@ -54,7 +54,7 @@ func NewDir(dir string) (*Dir, error) {
 
 func (d *Dir) Write(m *email.Message) error {
 
-    filename := d.makeID(m)
+    filename := d.makeID()
 
     tmpname := path.Join(d.dir, "tmp", filename)
     f, err := os.Create(tmpname)
@@ -74,8 +74,8 @@ func (d *Dir) Write(m *email.Message) error {
     return os.Rename(tmpname, path.Join(d.dir, "new", filename))
 }
 
-func (d *Dir) makeID(m *email.Message) string {
-    buf := make([]byte, 32)
+func (d *Dir) makeID() string {
+    buf := make([]byte, 16)
     rand.Reader.Read(buf)
     d.counter++
 
