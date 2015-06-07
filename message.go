@@ -1,6 +1,7 @@
-package smtpd
+package email
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -19,6 +20,7 @@ type Message struct {
 	Headers map[string]string
 	Subject string
 	Body    []*Part
+	RawBody []byte
 }
 
 // Part represents a single part of the message
@@ -50,23 +52,29 @@ func (m *Message) FindByType(contentType string) ([]byte, error) {
 }
 
 // parseBody unwraps the body io.Reader into a set of *Part structs
-func parseBody(m *mail.Message) ([]*Part, error) {
+func parseBody(m *mail.Message) ([]byte, []*Part, error) {
+
+	mbody, err := ioutil.ReadAll(m.Body)
+	if err != nil {
+		return []byte{}, []*Part{}, err
+	}
+	buf := bytes.NewBuffer(mbody)
 
 	var parts []*Part
 
 	mediaType, params, err := mime.ParseMediaType(m.Header.Get("Content-Type"))
 	if err != nil {
-		return parts, fmt.Errorf("Media Type error: %v", err)
+		return mbody, parts, fmt.Errorf("Media Type error: %v", err)
 	}
 
 	if strings.HasPrefix(mediaType, "multipart/") {
-		mr := multipart.NewReader(m.Body, params["boundary"])
+		mr := multipart.NewReader(buf, params["boundary"])
 		for {
 			p, err := mr.NextPart()
 			if err == io.EOF {
 				break
 			} else if err != nil {
-				return parts, fmt.Errorf("MIME error: %v", err)
+				return mbody, parts, fmt.Errorf("MIME error: %v", err)
 			}
 
 			slurp, err := ioutil.ReadAll(p)
@@ -78,7 +86,7 @@ func parseBody(m *mail.Message) ([]*Part, error) {
 
 		}
 	}
-	return parts, nil
+	return mbody, parts, nil
 }
 
 // NewMessage creates a Message from a data blob
@@ -101,15 +109,12 @@ func NewMessage(data string) (*Message, error) {
 	header := make(map[string]string)
 
 	for k, v := range m.Header {
-		uc := strings.ToUpper(k)
-		if uc == "TO" || uc == "FROM" {
-			continue
-		} else if len(v) == 1 {
+		if len(v) == 1 {
 			header[k] = v[0]
 		}
 	}
 
-	body, err := parseBody(m)
+	raw, parts, err := parseBody(m)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +124,8 @@ func NewMessage(data string) (*Message, error) {
 		from[0],
 		header,
 		m.Header.Get("subject"),
-		body,
+		parts,
+		raw,
 	}, nil
 
 }

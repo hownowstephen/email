@@ -5,12 +5,14 @@ import (
 	"net/smtp"
 	"testing"
 	"time"
+
+	"github.com/hownowstephen/email"
 )
 
 func TestHandleSMTP(t *testing.T) {
 
 	go func() {
-		err := ListenAndServe("127.0.0.1:12525", func(m *Message) (string, error) {
+		err := ListenAndServe("127.0.0.1:12525", func(m *email.Message) (string, error) {
 			fmt.Println(m)
 			return "ok", nil
 		})

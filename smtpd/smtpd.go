@@ -10,10 +10,12 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/hownowstephen/email"
 )
 
 // MessageHandler functions handle application of business logic to the inbound message
-type MessageHandler func(m *Message) (string, error)
+type MessageHandler func(m *email.Message) (string, error)
 
 // X509 certificate path, see http://www.ipsec-howto.org/x595.html
 const (
@@ -32,14 +34,14 @@ var TLSConfig *tls.Config
 
 // ListenAndServe creates a Server with a very general set of options
 func ListenAndServe(addr string, handler MessageHandler) error {
-	cert, err := tls.LoadX509KeyPair(X509PUB, X509PRIV)
-	if err != nil {
-		return fmt.Errorf("Could not load TLS keypair, %v", err)
-	}
-	TLSConfig = &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.VerifyClientCertIfGiven,
-		Rand:         rand.Reader,
+	if cert, err := tls.LoadX509KeyPair(X509PUB, X509PRIV); err == nil {
+		TLSConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			ClientAuth:   tls.VerifyClientCertIfGiven,
+			Rand:         rand.Reader,
+		}
+	} else {
+		fmt.Println("Could not load TLS keypair, %v", err)
 	}
 
 	// Start listening for SMTP connections
@@ -67,7 +69,7 @@ func ListenAndServe(addr string, handler MessageHandler) error {
 
 }
 
-func handleSMTP(conn Conn, handler func(m *Message) (string, error)) {
+func handleSMTP(conn Conn, handler func(m *email.Message) (string, error)) {
 	defer conn.Close()
 	write(conn, "220 %v %v", SERVERNAME, time.Now().Format(time.RFC1123Z))
 
@@ -120,7 +122,7 @@ ReadLoop:
 
 			if data, err := readData(conn); err == nil {
 
-				if message, err := NewMessage(data); err == nil {
+				if message, err := email.NewMessage(data); err == nil {
 
 					if id, err := handler(message); err == nil {
 						write(conn, fmt.Sprintf("250 OK : queued as %v", id))
