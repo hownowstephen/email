@@ -7,6 +7,8 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -26,11 +28,30 @@ type Server struct {
 	// MaxConn limits the number of concurrent connections being handled
 	MaxConn int
 
+	// MaxCommands is the maximum number of commands a server will accept
+	// from a single client before terminating the session
+	MaxCommands int
+
 	// RateLimiter gets called before proceeding through to message handling
 	RateLimiter func(*Conn) bool
 
 	// Handler is the handoff function for messages
-	Handler func(*email.Message) error
+	Handler MessageHandler
+}
+
+// NewServer creates a server with the default settings
+func NewServer(handler func(*email.Message) error) *Server {
+	name, err := os.Hostname()
+	if err != nil {
+		name = "localhost"
+	}
+	return &Server{
+		Name:        name,
+		ServerName:  name,
+		MaxSize:     1024 * 1024 * 10,
+		MaxCommands: 100,
+		Handler:     handler,
+	}
 }
 
 // UseTLS tries to enable TLS on the server (can also just explicitly set the TLSConfig)
@@ -47,8 +68,8 @@ func (s *Server) UseTLS(cert, key string) error {
 	return nil
 }
 
-// ListenAndServe creates a Server with a very general set of options
-func (s *Server) ListenAndServe(addr string, handler MessageHandler) error {
+// ListenAndServe starts listening for SMTP commands at the supplied TCP address
+func (s *Server) ListenAndServe(addr string) error {
 
 	// Start listening for SMTP connections
 	listener, err := net.Listen("tcp", addr)
@@ -76,9 +97,9 @@ func (s *Server) ListenAndServe(addr string, handler MessageHandler) error {
 
 }
 
-func (s *Server) handleMessage(m *email.Message) (string, error) {
+func (s *Server) handleMessage(m *email.Message) error {
 	fmt.Println(m)
-	return "0", nil
+	return nil
 }
 
 func (s *Server) handleSMTP(conn *Conn) error {
@@ -89,7 +110,7 @@ func (s *Server) handleSMTP(conn *Conn) error {
 	var isTLS bool
 
 ReadLoop:
-	for i := 0; i < 100; i++ {
+	for i := 0; i < s.MaxCommands; i++ {
 
 		input, err := conn.read()
 		if err != nil {
@@ -137,8 +158,8 @@ ReadLoop:
 
 				if message, err := email.NewMessage([]byte(data)); err == nil {
 
-					if id, err := s.handleMessage(message); err == nil {
-						conn.write(fmt.Sprintf("250 OK : queued as %v", id))
+					if err := s.handleMessage(message); err == nil {
+						conn.write(fmt.Sprintf("250 OK : queued as %v", message.ID()))
 					} else {
 						conn.write("554 Error: I blame me.")
 					}
@@ -178,4 +199,31 @@ ReadLoop:
 	}
 
 	return nil
+}
+
+func extractEmail(str string) (address string, err error) {
+	var host, name string
+	re, _ := regexp.Compile(`<(.+?)@(.+?)>`) // go home regex, you're drunk!
+	if matched := re.FindStringSubmatch(str); len(matched) > 2 {
+		host = validHost(matched[2])
+		name = matched[1]
+	} else {
+		if res := strings.Split(str, "@"); len(res) > 1 {
+			name = res[0]
+			host = validHost(res[1])
+		}
+	}
+	if host == "" || name == "" {
+		err = fmt.Errorf("Invalid address, [%v@%v] address: %v", name, host, str)
+	}
+	return fmt.Sprintf("%v@%v", name, host), err
+}
+
+func validHost(host string) string {
+	host = strings.Trim(host, " ")
+	re, _ := regexp.Compile(`^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$`)
+	if re.MatchString(host) {
+		return host
+	}
+	return ""
 }

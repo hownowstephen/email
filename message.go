@@ -39,6 +39,10 @@ type Part struct {
 	Body []byte
 }
 
+func (m *Message) ID() string {
+	return "not-implemented"
+}
+
 // Plain returns the text/plain content of the message, if any
 func (m *Message) Plain() ([]byte, error) {
 	return m.FindByType("text/plain")
