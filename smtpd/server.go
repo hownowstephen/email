@@ -112,7 +112,7 @@ func (s *Server) handleSMTP(conn *Conn) error {
 ReadLoop:
 	for i := 0; i < s.MaxCommands; i++ {
 
-		input, err := conn.read()
+		input, err := conn.read(s.MaxSize)
 		if err != nil {
 			log.Printf("Read error: %v", err)
 			if err == io.EOF {
@@ -154,7 +154,7 @@ ReadLoop:
 		case strings.HasPrefix(cmd, "DATA"):
 			conn.write("354 Enter message, ending with \".\" on a line by itself")
 
-			if data, err := conn.readData(); err == nil {
+			if data, err := conn.readData(s.MaxSize); err == nil {
 
 				if message, err := email.NewMessage([]byte(data)); err == nil {
 

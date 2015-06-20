@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -27,19 +26,19 @@ func (c *Conn) writeOK() error {
 }
 
 // read handles brokering incoming SMTP protocol
-func (c *Conn) read() (string, error) {
-	msg, err := c.rawRead("\r\n")
+func (c *Conn) read(max int) (string, error) {
+	msg, err := c.rawRead("\r\n", max)
 	log.Println(strings.TrimSpace(msg))
 	return msg, err
 }
 
 // readData brokers the special case of SMTP data messages
-func (c *Conn) readData() (string, error) {
-	return c.rawRead("\r\n.\r\n")
+func (c *Conn) readData(max int) (string, error) {
+	return c.rawRead("\r\n.\r\n", max)
 }
 
 // rawRead performs the actual read from the connection
-func (c *Conn) rawRead(suffix string) (input string, err error) {
+func (c *Conn) rawRead(suffix string, max int) (input string, err error) {
 	var reply string
 	reader := bufio.NewReader(c)
 	for err == nil {
@@ -47,8 +46,8 @@ func (c *Conn) rawRead(suffix string) (input string, err error) {
 		reply, err = reader.ReadString('\n')
 		if reply != "" {
 			input = input + reply
-			if len(input) > MAXSIZE {
-				return strings.Trim(input, " \n\r"), fmt.Errorf("Maximum DATA size exceeded (%v)", strconv.Itoa(MAXSIZE))
+			if len(input) > max && max > 0 {
+				return strings.Trim(input, " \n\r"), fmt.Errorf("Maximum DATA size exceeded (%v)", max)
 			}
 		}
 		if err != nil {
