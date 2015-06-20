@@ -48,6 +48,7 @@ func ListenAndServe(addr string, handler MessageHandler) error {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("Cannot listen on %v (%v)", addr, err)
+		return err
 	}
 
 	log.Println("Listen...")
@@ -63,15 +64,17 @@ func ListenAndServe(addr string, handler MessageHandler) error {
 			log.Println("Could not handle request:", err)
 			continue
 		}
-		go handleSMTP(conn, handler)
+		go handleSMTP(&Conn{conn}, handler)
 		clientID++
 	}
 
+	return nil
+
 }
 
-func handleSMTP(conn Conn, handler func(m *email.Message) (string, error)) {
+func handleSMTP(conn *Conn, handler func(m *email.Message) (string, error)) {
 	defer conn.Close()
-	write(conn, "220 %v %v", SERVERNAME, time.Now().Format(time.RFC1123Z))
+	conn.write("220 %v %v", SERVERNAME, time.Now().Format(time.RFC1123Z))
 
 	var errors int
 	var isTLS bool
@@ -79,7 +82,7 @@ func handleSMTP(conn Conn, handler func(m *email.Message) (string, error)) {
 ReadLoop:
 	for i := 0; i < 100; i++ {
 
-		input, err := read(conn)
+		input, err := conn.read()
 		if err != nil {
 			log.Printf("Read error: %v", err)
 			if err == io.EOF {
@@ -97,41 +100,41 @@ ReadLoop:
 
 		switch {
 		case strings.HasPrefix(cmd, "HELO"):
-			write(conn, "250 %v Hello ", SERVERNAME)
+			conn.write("250 %v Hello ", SERVERNAME)
 		case strings.HasPrefix(cmd, "EHLO"):
-			write(conn, "250-%v Hello [127.0.0.1]", SERVERNAME)
-			write(conn, "250-SIZE %v", MAXSIZE)
+			conn.write("250-%v Hello [127.0.0.1]", SERVERNAME)
+			conn.write("250-SIZE %v", MAXSIZE)
 			if !isTLS {
-				write(conn, "250-STARTTLS")
+				conn.write("250-STARTTLS")
 			}
-			write(conn, "250 HELP")
+			conn.write("250 HELP")
 		case strings.HasPrefix(cmd, "MAIL FROM:"):
 			if email, err := extractEmail(input); err == nil {
 				log.Println("Message from:", email)
 			}
-			writeOK(conn)
+			conn.writeOK()
 		case strings.HasPrefix(cmd, "RCPT TO:"):
 			if email, err := extractEmail(input); err == nil {
 				log.Println("Message to:", email)
 			}
-			write(conn, "250 Accepted")
+			conn.write("250 Accepted")
 		case strings.HasPrefix(cmd, "RSET"):
-			writeOK(conn)
+			conn.writeOK()
 		case strings.HasPrefix(cmd, "DATA"):
-			write(conn, "354 Enter message, ending with \".\" on a line by itself")
+			conn.write("354 Enter message, ending with \".\" on a line by itself")
 
-			if data, err := readData(conn); err == nil {
+			if data, err := conn.readData(); err == nil {
 
 				if message, err := email.NewMessage([]byte(data)); err == nil {
 
 					if id, err := handler(message); err == nil {
-						write(conn, fmt.Sprintf("250 OK : queued as %v", id))
+						conn.write(fmt.Sprintf("250 OK : queued as %v", id))
 					} else {
-						write(conn, "554 Error: I blame me.")
+						conn.write("554 Error: I blame me.")
 					}
 
 				} else {
-					write(conn, fmt.Sprintf("554 Error: %v", err))
+					conn.write(fmt.Sprintf("554 Error: %v", err))
 				}
 
 			} else {
@@ -139,26 +142,26 @@ ReadLoop:
 			}
 
 		case strings.HasPrefix(cmd, "STARTTLS"):
-			write(conn, "220 Ready to start TLS")
+			conn.write("220 Ready to start TLS")
 
 			// upgrade to TLS
 			tlsConn := tls.Server(conn, TLSConfig)
 			err := tlsConn.Handshake()
 			if err == nil {
-				conn, isTLS = tlsConn, true
+				conn, isTLS = &Conn{tlsConn}, true
 			} else {
 				log.Fatalf("Could not TLS handshake:%v", err)
 			}
 		case strings.HasPrefix(cmd, "QUIT"):
-			write(conn, "221 Bye")
+			conn.write("221 Bye")
 			break ReadLoop
 		case strings.HasPrefix(cmd, "NOOP") || strings.HasPrefix(cmd, "XCLIENT"):
-			writeOK(conn)
+			conn.writeOK()
 		default:
-			write(conn, "500 unrecognized command")
+			conn.write("500 unrecognized command")
 			errors++
 			if errors > 3 {
-				write(conn, "500 Too many unrecognized commands")
+				conn.write("500 Too many unrecognized commands")
 				break ReadLoop
 			}
 		}

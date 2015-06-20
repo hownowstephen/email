@@ -10,34 +10,36 @@ import (
 	"time"
 )
 
-type Conn net.Conn
+type Conn struct {
+	net.Conn
+}
 
 // write communicates back to the connected client
-func write(c Conn, format string, vars ...interface{}) error {
+func (c *Conn) write(format string, vars ...interface{}) error {
 	c.SetDeadline(time.Now().Add(10 * time.Second))
 	_, err := c.Write([]byte(fmt.Sprintf(format, vars...) + "\r\n"))
 	return err
 }
 
 // writeOK is a convenience function for sending the default OK response
-func writeOK(c Conn) error {
-	return write(c, "250 OK")
+func (c *Conn) writeOK() error {
+	return c.write("250 OK")
 }
 
 // read handles brokering incoming SMTP protocol
-func read(c Conn) (string, error) {
-	msg, err := rawRead(c, "\r\n")
+func (c *Conn) read() (string, error) {
+	msg, err := c.rawRead("\r\n")
 	log.Println(strings.TrimSpace(msg))
 	return msg, err
 }
 
 // readData brokers the special case of SMTP data messages
-func readData(c Conn) (string, error) {
-	return rawRead(c, "\r\n.\r\n")
+func (c *Conn) readData() (string, error) {
+	return c.rawRead("\r\n.\r\n")
 }
 
 // rawRead performs the actual read from the connection
-func rawRead(c Conn, suffix string) (input string, err error) {
+func (c *Conn) rawRead(suffix string) (input string, err error) {
 	var reply string
 	reader := bufio.NewReader(c)
 	for err == nil {

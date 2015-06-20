@@ -12,6 +12,16 @@ import (
 	"strings"
 )
 
+// type Message interface {
+// 	To() []*mail.Address
+// 	From() *mail.Address
+
+// 	Headers() map[string]string
+// 	Subject() string
+// 	Parts() []string
+// 	Part(name string) *multipart.Part
+// }
+
 // Message is a nicely packaged representation of the
 // recieved message
 type Message struct {
