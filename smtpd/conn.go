@@ -11,6 +11,8 @@ import (
 
 type Conn struct {
 	net.Conn
+	IsTLS  bool
+	Errors []error
 }
 
 // write communicates back to the connected client
