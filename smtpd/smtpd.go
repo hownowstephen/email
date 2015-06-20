@@ -15,12 +15,6 @@ const (
 	X509PRIV = "../certs/server.key"
 )
 
-// @TODO Refactor these into the underlying mail handler
-const (
-	SERVERNAME = "mail.hownowstephen.com"
-	MAXSIZE    = 131072
-)
-
 // TLSConfig handles certificates & handshaking, if available
 var TLSConfig *tls.Config
 

@@ -48,7 +48,7 @@ func NewServer(handler func(*email.Message) error) *Server {
 	return &Server{
 		Name:        name,
 		ServerName:  name,
-		MaxSize:     1024 * 1024 * 10,
+		MaxSize:     131072,
 		MaxCommands: 100,
 		Handler:     handler,
 	}
@@ -104,7 +104,7 @@ func (s *Server) handleMessage(m *email.Message) error {
 
 func (s *Server) handleSMTP(conn *Conn) error {
 	defer conn.Close()
-	conn.write("220 %v %v", SERVERNAME, time.Now().Format(time.RFC1123Z))
+	conn.write("220 %v %v", s.Name, time.Now().Format(time.RFC1123Z))
 
 	var errors int
 	var isTLS bool
@@ -131,10 +131,10 @@ ReadLoop:
 
 		switch {
 		case strings.HasPrefix(cmd, "HELO"):
-			conn.write("250 %v Hello ", SERVERNAME)
+			conn.write("250 %v Hello ", s.Name)
 		case strings.HasPrefix(cmd, "EHLO"):
-			conn.write("250-%v Hello [127.0.0.1]", SERVERNAME)
-			conn.write("250-SIZE %v", MAXSIZE)
+			conn.write("250-%v Hello [127.0.0.1]", s.Name)
+			conn.write("250-SIZE %v", s.MaxSize)
 			if !isTLS {
 				conn.write("250-STARTTLS")
 			}
