@@ -133,6 +133,7 @@ ReadLoop:
 		}
 
 		switch verb {
+		// https://tools.ietf.org/html/rfc2821#section-4.1.1.1
 		case "HELO":
 			conn.write("250 %v Hello ", s.Name)
 		case "EHLO":
@@ -154,6 +155,7 @@ ReadLoop:
 			conn.write("250 Accepted")
 		case "RSET":
 			conn.writeOK()
+			return s.handleSMTP(conn)
 		case "DATA":
 			conn.write("354 Enter message, ending with \".\" on a line by itself")
 
