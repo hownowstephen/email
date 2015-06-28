@@ -1,4 +1,4 @@
-package smtpd
+package smtpd_test
 
 import (
 	"fmt"
@@ -7,20 +7,24 @@ import (
 	"time"
 
 	"github.com/hownowstephen/email"
+	"github.com/hownowstephen/email/smtpd"
 )
 
-func TestHandleSMTP(t *testing.T) {
+type MessageRecorder struct {
+	Messages []*email.Message
+}
 
-	go func() {
-		server := NewServer(func(m *email.Message) error {
-			fmt.Println(m)
-			return nil
-		})
-		err := server.ListenAndServe("127.0.0.1:12525")
-		if err != nil {
-			panic(err)
-		}
-	}()
+func (m *MessageRecorder) Record(msg *email.Message) error {
+	m.Messages = append(m.Messages, msg)
+	return nil
+}
+
+func TestSMTPServer(t *testing.T) {
+
+	recorder := &MessageRecorder{}
+	server := smtpd.NewServer(recorder.Record)
+	go server.ListenAndServe("localhost:12525")
+	defer server.Close()
 
 	time.Sleep(time.Second)
 
