@@ -15,23 +15,8 @@ import (
 	"github.com/hownowstephen/email"
 )
 
-type Extension interface {
-	Handle(*SMTPConn, string) error
-	EHLO() string
-}
-
-type SimpleExtension struct {
-	Handler func(*SMTPConn, string) error
-	Ehlo    string
-}
-
-func (s *SimpleExtension) Handle(c *SMTPConn, args string) error {
-	return s.Handler(c, args)
-}
-
-func (s *SimpleExtension) EHLO() string {
-	return s.Ehlo
-}
+// MessageHandler functions handle application of business logic to the inbound message
+type MessageHandler func(m *email.Message) error
 
 type Server struct {
 	Name string
@@ -253,7 +238,7 @@ ReadLoop:
 			conn.WriteSMTP(220, "Ready to start TLS")
 
 			// upgrade to TLS
-			tlsConn := tls.Server(conn, TLSConfig)
+			tlsConn := tls.Server(conn, s.TLSConfig)
 			err := tlsConn.Handshake()
 			if err == nil {
 				conn = &SMTPConn{tlsConn, true, conn.Errors, conn.MaxSize}

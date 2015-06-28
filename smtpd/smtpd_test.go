@@ -12,10 +12,11 @@ import (
 func TestHandleSMTP(t *testing.T) {
 
 	go func() {
-		err := ListenAndServeSMTP("127.0.0.1:12525", func(m *email.Message) error {
+		server := NewServer(func(m *email.Message) error {
 			fmt.Println(m)
 			return nil
 		})
+		err := server.ListenAndServe("127.0.0.1:12525")
 		if err != nil {
 			panic(err)
 		}
