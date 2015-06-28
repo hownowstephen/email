@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-type Conn struct {
+type SMTPConn struct {
 	net.Conn
 	IsTLS   bool
 	Errors  []error
@@ -17,17 +17,31 @@ type Conn struct {
 }
 
 // ReadSMTP
-func (c *Conn) ReadSMTP() (string, error) {
-	return c.ReadUntil("\r\n")
+func (c *SMTPConn) ReadSMTP() (string, string, error) {
+	if value, err := c.ReadUntil("\r\n"); err == nil {
+		value = strings.TrimSpace(value)
+
+		var args string
+		command := strings.SplitN(value, " ", 2)
+
+		verb := strings.ToUpper(command[0])
+		if len(command) > 1 {
+			args = command[1]
+		}
+
+		return verb, args, nil
+	} else {
+		return "", "", err
+	}
 }
 
 // readData brokers the special case of SMTP data messages
-func (c *Conn) ReadData() (string, error) {
+func (c *SMTPConn) ReadData() (string, error) {
 	return c.ReadUntil("\r\n.\r\n")
 }
 
 // rawRead performs the actual read from the connection, reading each line up to the first occurrence of suffix
-func (c *Conn) ReadUntil(suffix string) (value string, err error) {
+func (c *SMTPConn) ReadUntil(suffix string) (value string, err error) {
 	var reply string
 	reader := bufio.NewReader(c)
 	for err == nil {
@@ -50,7 +64,7 @@ func (c *Conn) ReadUntil(suffix string) (value string, err error) {
 }
 
 // WriteSMTP writes a general SMTP line
-func (c *Conn) WriteSMTP(code int, message string) error {
+func (c *SMTPConn) WriteSMTP(code int, message string) error {
 	log.Println(code, message)
 	c.SetDeadline(time.Now().Add(10 * time.Second))
 	_, err := c.Write([]byte(fmt.Sprintf("%v %v", code, message) + "\r\n"))
@@ -58,7 +72,7 @@ func (c *Conn) WriteSMTP(code int, message string) error {
 }
 
 // WriteEHLO writes an EHLO line, see https://tools.ietf.org/html/rfc2821#section-4.1.1.1
-func (c *Conn) WriteEHLO(message string) error {
+func (c *SMTPConn) WriteEHLO(message string) error {
 	log.Println("EHLO", message)
 	c.SetDeadline(time.Now().Add(10 * time.Second))
 	_, err := c.Write([]byte(fmt.Sprintf("250-%v", message) + "\r\n"))
@@ -66,6 +80,6 @@ func (c *Conn) WriteEHLO(message string) error {
 }
 
 // WriteOK is a convenience function for sending the default OK response
-func (c *Conn) WriteOK() error {
+func (c *SMTPConn) WriteOK() error {
 	return c.WriteSMTP(250, "OK")
 }
