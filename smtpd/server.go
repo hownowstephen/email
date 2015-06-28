@@ -15,6 +15,11 @@ import (
 	"github.com/hownowstephen/email"
 )
 
+type Extension interface {
+	Handle(*Conn, string) error
+	EHLO() string
+}
+
 type Server struct {
 	Name string
 
@@ -37,6 +42,9 @@ type Server struct {
 
 	// Handler is the handoff function for messages
 	Handler MessageHandler
+
+	// Extensions is a map of server-specific extensions & overrides, by verb
+	Extensions map[string]Extension
 }
 
 // NewServer creates a server with the default settings
@@ -52,6 +60,19 @@ func NewServer(handler func(*email.Message) error) *Server {
 		MaxCommands: 100,
 		Handler:     handler,
 	}
+}
+
+func (s *Server) Welcome(conn *Conn) string {
+	return fmt.Sprintf("Welcome! [%v]", conn.LocalAddr())
+}
+
+func (s *Server) Extend(verb string, extension Extension) error {
+	if _, ok := s.Extensions[verb]; ok {
+		return fmt.Errorf("Extension for %v has already been registered", verb)
+	}
+
+	s.Extensions[verb] = extension
+	return nil
 }
 
 // UseTLS tries to enable TLS on the server (can also just explicitly set the TLSConfig)
@@ -89,7 +110,12 @@ func (s *Server) ListenAndServe(addr string) error {
 			log.Println("Could not handle request:", err)
 			continue
 		}
-		go s.handleSMTP(&Conn{conn, false, []error{}})
+		go s.handleSMTP(&Conn{
+			Conn:    conn,
+			IsTLS:   false,
+			Errors:  []error{},
+			MaxSize: s.MaxSize,
+		})
 		clientID++
 	}
 
@@ -104,25 +130,29 @@ func (s *Server) handleMessage(m *email.Message) error {
 
 func (s *Server) handleSMTP(conn *Conn) error {
 	defer conn.Close()
-	conn.write("220 %v %v", s.Name, time.Now().Format(time.RFC1123Z))
+	conn.WriteSMTP(220, fmt.Sprintf("%v %v", s.Name, time.Now().Format(time.RFC1123Z)))
 
 ReadLoop:
 	for i := 0; i < s.MaxCommands; i++ {
 
-		input, err := conn.read(s.MaxSize)
-		if err != nil {
+		var input string
+		var err error
+
+		if input, err = conn.ReadSMTP(); err != nil {
 			log.Printf("Read error: %v", err)
 			if err == io.EOF {
 				// client closed the connection already
-				return nil
+				break ReadLoop
 			}
 			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
 				// too slow, timeout
-				return nil
+				break ReadLoop
 			}
 
 			return err
 		}
+
+		input = strings.TrimSpace(input)
 
 		var args string
 		command := strings.SplitN(input, " ", 2)
@@ -132,83 +162,123 @@ ReadLoop:
 			args = command[1]
 		}
 
+		// Handle any extensions / overrides before running default logic
+		if _, ok := s.Extensions[verb]; ok {
+			err := s.Extensions[verb].Handle(conn, args)
+			if err != nil {
+				log.Printf("Error? %v", err)
+			}
+			continue
+		}
+
 		switch verb {
 		// https://tools.ietf.org/html/rfc2821#section-4.1.1.1
 		case "HELO":
-			conn.write("250 %v Hello ", s.Name)
+			conn.WriteSMTP(250, fmt.Sprintf("%v Hello", s.Name))
 		case "EHLO":
-			conn.write("250-%v Hello [127.0.0.1]", s.Name)
-			conn.write("250-SIZE %v", s.MaxSize)
+			conn.WriteEHLO(fmt.Sprintf("%v %v", s.ServerName, s.Welcome(conn)))
+			conn.WriteEHLO(fmt.Sprintf("SIZE %v", s.MaxSize))
 			if !conn.IsTLS {
-				conn.write("250-STARTTLS")
+				conn.WriteEHLO("STARTTLS")
 			}
-			conn.write("250 HELP")
+			for _, extension := range s.Extensions {
+				conn.WriteSMTP(250, fmt.Sprintf("EXTENSION %v", extension))
+			}
+			conn.WriteSMTP(250, "HELP")
+		// https://tools.ietf.org/html/rfc2821#section-4.1.1.2
 		case "MAIL":
-			if email, err := extractEmail(args); err == nil {
+			// This is wrong, won't always be an eamail address
+			if email, err := extractEmail("to", args); err == nil {
 				log.Println("Message from:", email)
 			}
-			conn.writeOK()
+			conn.WriteOK()
+		// https://tools.ietf.org/html/rfc2821#section-4.1.1.3
 		case "RCPT":
-			if email, err := extractEmail(args); err == nil {
+			if email, err := extractEmail("from", args); err == nil {
 				log.Println("Message to:", email)
 			}
-			conn.write("250 Accepted")
-		case "RSET":
-			conn.writeOK()
-			return s.handleSMTP(conn)
+			conn.WriteSMTP(250, "Accepted")
+		// https://tools.ietf.org/html/rfc2821#section-4.1.1.4
 		case "DATA":
-			conn.write("354 Enter message, ending with \".\" on a line by itself")
+			conn.WriteSMTP(354, "Enter message, ending with \".\" on a line by itself")
 
-			if data, err := conn.readData(s.MaxSize); err == nil {
+			if data, err := conn.ReadData(); err == nil {
 
 				if message, err := email.NewMessage([]byte(data)); err == nil {
 
 					if err := s.handleMessage(message); err == nil {
-						conn.write(fmt.Sprintf("250 OK : queued as %v", message.ID()))
+						conn.WriteSMTP(250, fmt.Sprintf("OK : queued as %v", message.ID()))
 					} else {
-						conn.write("554 Error: I blame me.")
+						conn.WriteSMTP(554, "Error: I blame me.")
 					}
 
 				} else {
-					conn.write(fmt.Sprintf("554 Error: %v", err))
+					conn.WriteSMTP(554, fmt.Sprintf("Error: %v", err))
 				}
 
 			} else {
 				log.Fatalf("DATA read error: %v", err)
 			}
+		// https://tools.ietf.org/html/rfc2821#section-4.1.1.5
+		case "RSET":
+			conn.WriteOK()
+			return s.handleSMTP(conn)
 
+		// https://tools.ietf.org/html/rfc2821#section-4.1.1.6
+		case "VRFY":
+			conn.WriteOK()
+
+		// https://tools.ietf.org/html/rfc2821#section-4.1.1.7
+		case "EXPN":
+			conn.WriteOK()
+
+		// https://tools.ietf.org/html/rfc2821#section-4.1.1.8
+		case "HELP":
+			conn.WriteOK()
+
+		// https://tools.ietf.org/html/rfc2821#section-4.1.1.9
+		case "NOOP":
+			conn.WriteOK()
+
+		// https://tools.ietf.org/html/rfc2821#section-4.1.1.10
+		case "QUIT":
+			conn.WriteSMTP(221, "Bye")
+			break ReadLoop
+
+		// https://tools.ietf.org/html/rfc2487
 		case "STARTTLS":
-			conn.write("220 Ready to start TLS")
+			conn.WriteSMTP(220, "Ready to start TLS")
 
 			// upgrade to TLS
 			tlsConn := tls.Server(conn, TLSConfig)
 			err := tlsConn.Handshake()
 			if err == nil {
-				conn = &Conn{tlsConn, true, conn.Errors}
+				conn = &Conn{tlsConn, true, conn.Errors, conn.MaxSize}
 			} else {
 				log.Fatalf("Could not TLS handshake:%v", err)
 			}
-		case "QUIT":
-			conn.write("221 Bye")
-			break ReadLoop
-		case "NOOP", "XCLIENT":
-			conn.writeOK()
+
+		// http://tools.ietf.org/html/rfc4954
+		case "AUTH":
+
 		default:
-			conn.write("500 unrecognized command")
+
+			conn.WriteSMTP(500, "unrecognized command")
 			conn.Errors = append(conn.Errors, fmt.Errorf("bad input: %v", input))
 			if len(conn.Errors) > 3 {
-				conn.write("500 Too many unrecognized commands")
+				conn.WriteSMTP(500, "Too many unrecognized commands")
 				break ReadLoop
 			}
+
 		}
 	}
 
 	return nil
 }
 
-func extractEmail(str string) (address string, err error) {
+func extractEmail(param, str string) (address string, err error) {
 	var host, name string
-	re, _ := regexp.Compile(`<(.+?)@(.+?)>`) // go home regex, you're drunk!
+	re, _ := regexp.Compile(fmt.Sprintf(`(?i)%v:<(.+?)@(.+?)>`, param))
 	if matched := re.FindStringSubmatch(str); len(matched) > 2 {
 		host = validHost(matched[2])
 		name = matched[1]
