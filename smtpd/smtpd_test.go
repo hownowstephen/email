@@ -23,13 +23,13 @@ func TestSMTPServer(t *testing.T) {
 
 	recorder := &MessageRecorder{}
 	server := smtpd.NewServer(recorder.Record)
-	go server.ListenAndServe("localhost:12525")
+	go server.ListenAndServe("localhost:0")
 	defer server.Close()
 
 	time.Sleep(time.Second)
 
 	// Connect to the remote SMTP server.
-	c, err := smtp.Dial("127.0.0.1:12525")
+	c, err := smtp.Dial(server.Address())
 	if err != nil {
 		t.Errorf("Should be able to dial localhost: %v", err)
 	}

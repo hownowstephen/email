@@ -13,6 +13,12 @@ type Auth struct {
     Mechanisms map[string]AuthExtension
 }
 
+func NewAuth() *Auth {
+    return &Auth{
+        Mechanisms: make(map[string]AuthExtension),
+    }
+}
+
 func (a *Auth) Handle(c *SMTPConn, args string) error {
 
     mech := strings.SplitN(args, " ", 2)

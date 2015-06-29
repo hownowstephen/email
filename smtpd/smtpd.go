@@ -152,6 +152,13 @@ func (s *Server) ListenAndServe(addr string) error {
 
 }
 
+func (s *Server) Address() string {
+    if len(s.listeners) > 0 {
+        return s.listeners[0].Addr().String()
+    }
+    return ""
+}
+
 func (s *Server) handleMessage(m *email.Message) error {
     return s.Handler(m)
 }

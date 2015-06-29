@@ -13,16 +13,20 @@ func TestSMTPAuthPLAIN(t *testing.T) {
 
     recorder := &MessageRecorder{}
     server := smtpd.NewServer(recorder.Record)
+
+    // authService := smtpd.Auth{}
+
+    // http://www.akadia.com/services/ssh_test_certificate.html
     if err := server.UseTLS("./server.crt", "./server.key"); err != nil {
         t.Errorf("Server couldn't load TLS credentials")
     }
-    go server.ListenAndServe("localhost:12525")
+    go server.ListenAndServe("localhost:0")
     defer server.Close()
 
     time.Sleep(time.Second)
 
     // Connect to the remote SMTP server.
-    c, err := smtp.Dial("127.0.0.1:12525")
+    c, err := smtp.Dial(server.Address())
     if err != nil {
         t.Errorf("Should be able to dial localhost: %v", err)
     }
@@ -42,13 +46,13 @@ func TestSMTPAuthPLAIN(t *testing.T) {
 func TestSMTPAuthLocking(t *testing.T) {
     recorder := &MessageRecorder{}
     server := smtpd.NewServer(recorder.Record)
-    go server.ListenAndServe("localhost:12525")
+    go server.ListenAndServe("localhost:0")
     defer server.Close()
 
     time.Sleep(time.Second)
 
     // Connect to the remote SMTP server.
-    c, err := smtp.Dial("127.0.0.1:12525")
+    c, err := smtp.Dial(server.Address())
     if err != nil {
         t.Errorf("Should be able to dial localhost: %v", err)
     }
@@ -61,13 +65,13 @@ func TestSMTPAuthLocking(t *testing.T) {
 func TestSMTPAuthPLAINEncryption(t *testing.T) {
     recorder := &MessageRecorder{}
     server := smtpd.NewServer(recorder.Record)
-    go server.ListenAndServe("localhost:12525")
+    go server.ListenAndServe("localhost:0")
     defer server.Close()
 
     time.Sleep(time.Second)
 
     // Connect to the remote SMTP server.
-    c, err := smtp.Dial("127.0.0.1:12525")
+    c, err := smtp.Dial(server.Address())
     if err != nil {
         t.Errorf("Should be able to dial localhost: %v", err)
     }
