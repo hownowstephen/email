@@ -5,6 +5,8 @@ import (
     "strings"
 )
 
+// http://tools.ietf.org/html/rfc4422#section-3.1
+// https://en.wikipedia.org/wiki/Simple_Authentication_and_Security_Layer
 type AuthExtension interface {
     Handle(*SMTPConn, string) error
 }

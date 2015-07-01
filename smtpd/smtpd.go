@@ -44,6 +44,9 @@ type Server struct {
     // Extensions is a map of server-specific extensions & overrides, by verb
     Extensions map[string]Extension
 
+    // Disabled features
+    Disabled map[string]bool
+
     // Server flags
     listeners []net.Listener
 }
@@ -61,6 +64,7 @@ func NewServer(handler func(*email.Message) error) *Server {
         MaxCommands: 100,
         Handler:     handler,
         Extensions:  make(map[string]Extension),
+        Disabled:    make(map[string]bool),
     }
 }
 
@@ -82,6 +86,20 @@ func (s *Server) Extend(verb string, extension Extension) error {
 
     s.Extensions[verb] = extension
     return nil
+}
+
+// Disable server capabilities
+func (s *Server) Disable(verbs ...string) {
+    for _, verb := range verbs {
+        s.Disabled[strings.ToUpper(verb)] = true
+    }
+}
+
+// Enable server capabilities that have previously been disabled
+func (s *Server) Enable(verbs ...string) {
+    for _, verb := range verbs {
+        s.Disabled[strings.ToUpper(verb)] = false
+    }
 }
 
 // UseTLS tries to enable TLS on the server (can also just explicitly set the TLSConfig)
@@ -187,6 +205,16 @@ ReadLoop:
             return err
         }
 
+        // Always check for disabled features first
+        if s.Disabled[verb] {
+            if verb == "EHLO" {
+                conn.WriteSMTP(550, "Not implemented")
+            } else {
+                conn.WriteSMTP(502, "Command not implemented")
+            }
+            continue
+        }
+
         // Handle any extensions / overrides before running default logic
         if _, ok := s.Extensions[verb]; ok {
             err := s.Extensions[verb].Handle(conn, args)
@@ -289,7 +317,7 @@ ReadLoop:
 
         default:
 
-            conn.WriteSMTP(500, "unrecognized command")
+            conn.WriteSMTP(500, "Syntax error, command unrecognised")
             conn.Errors = append(conn.Errors, fmt.Errorf("bad input: %v %v", verb, args))
             if len(conn.Errors) > 3 {
                 conn.WriteSMTP(500, "Too many unrecognized commands")
