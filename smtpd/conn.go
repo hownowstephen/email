@@ -75,7 +75,7 @@ func (c *SMTPConn) WriteSMTP(code int, message string) error {
 
 // WriteEHLO writes an EHLO line, see https://tools.ietf.org/html/rfc2821#section-4.1.1.1
 func (c *SMTPConn) WriteEHLO(message string) error {
-	log.Println("EHLO", message)
+	log.Printf("S: 250-%v", message)
 	c.SetDeadline(time.Now().Add(10 * time.Second))
 	_, err := c.Write([]byte(fmt.Sprintf("250-%v", message) + "\r\n"))
 	return err

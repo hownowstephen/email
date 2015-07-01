@@ -223,6 +223,9 @@ ReadLoop:
             switch verb {
             case "AUTH", "EHLO", "HELO", "NOOP", "RSET", "QUIT", "STARTTLS":
                 // these are okay to call without authentication on an Auth-enabled server
+            case "*":
+                conn.WriteSMTP(501, "Cancelled")
+                continue
             default:
                 conn.WriteSMTP(530, "Authentication required")
                 continue
