@@ -1,6 +1,7 @@
 package smtpd
 
 import (
+    "encoding/base64"
     "fmt"
     "strings"
 )
@@ -62,10 +63,24 @@ type AuthExtension interface {
     Handle(*SMTPConn, string) (AuthUser, error)
 }
 
-type SimpleAuthFunc func(string) (AuthUser, bool)
+type SimpleAuthFunc func(string, string) (AuthUser, bool)
 
 type AuthPlain struct {
     Auth SimpleAuthFunc
+}
+
+func (a *AuthPlain) unpack(line string) (string, string, error) {
+    rawCreds, err := base64.StdEncoding.DecodeString(line)
+    if err != nil {
+        return "", "", err
+    }
+    creds := strings.SplitN(string(rawCreds), "\x00", 3)
+
+    if len(creds) != 3 {
+        return "", "", fmt.Errorf("Malformed auth string")
+    }
+
+    return creds[1], creds[2], nil
 }
 
 // Handles the negotiation of an AUTH PLAIN request
@@ -78,19 +93,24 @@ func (a *AuthPlain) Handle(conn *SMTPConn, params string) (AuthUser, error) {
     if strings.TrimSpace(params) == "" {
         conn.WriteSMTP(334, "")
         if line, err := conn.ReadUntil("\r\n"); err == nil {
-            if user, isAuth := a.Auth(line); isAuth {
+            username, password, err := a.unpack(line)
+            if err != nil {
+                return nil, err
+            } else if user, isAuth := a.Auth(username, password); isAuth {
                 return user, nil
-            } else {
-                return user, ErrAuthFailed
             }
         } else {
             return nil, err
         }
-    } else if user, isAuth := a.Auth(params); isAuth {
-        return user, nil
-    } else {
-        return user, ErrAuthFailed
+    } else if username, password, err := a.unpack(params); err == nil {
+        if user, isAuth := a.Auth(username, password); isAuth {
+            return user, nil
+        }
     }
 
     return nil, ErrAuthFailed
+}
+
+type AuthCramMd5 struct {
+    Auth SimpleAuthFunc
 }

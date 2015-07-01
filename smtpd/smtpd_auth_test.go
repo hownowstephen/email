@@ -2,9 +2,7 @@ package smtpd_test
 
 import (
     "crypto/tls"
-    "encoding/base64"
     "net/smtp"
-    "strings"
     "testing"
     "time"
 
@@ -12,7 +10,6 @@ import (
 )
 
 type TestUser struct {
-    actor    string
     username string
     password string
 }
@@ -27,7 +24,7 @@ func TestSMTPAuthPlain(t *testing.T) {
 
     serverAuth := smtpd.NewAuth()
     serverAuth.Extend("PLAIN", &smtpd.AuthPlain{
-        Auth: func(value string) (smtpd.AuthUser, bool) {
+        Auth: func(username, password string) (smtpd.AuthUser, bool) {
             return &TestUser{}, true
         },
     })
@@ -71,23 +68,10 @@ func TestSMTPAuthPlainRejection(t *testing.T) {
 
     serverAuth := smtpd.NewAuth()
     serverAuth.Extend("PLAIN", &smtpd.AuthPlain{
-        Auth: func(value string) (smtpd.AuthUser, bool) {
-            rawCreds, err := base64.StdEncoding.DecodeString(value)
-            if err != nil {
-                return nil, false
+        Auth: func(username, password string) (smtpd.AuthUser, bool) {
+            if passwd[username] == password {
+                return &TestUser{username, password}, true
             }
-            creds := strings.SplitN(string(rawCreds), "\x00", 3)
-
-            if len(creds) != 3 {
-                return nil, false
-            }
-
-            user := &TestUser{creds[0], creds[1], creds[2]}
-
-            if passwd[user.username] == user.password {
-                return user, true
-            }
-
             return nil, false
         },
     })
@@ -141,7 +125,7 @@ func TestSMTPAuthLocking(t *testing.T) {
 
     serverAuth := smtpd.NewAuth()
     serverAuth.Extend("PLAIN", &smtpd.AuthPlain{
-        Auth: func(value string) (smtpd.AuthUser, bool) {
+        Auth: func(username, password string) (smtpd.AuthUser, bool) {
             return &TestUser{}, true
         },
     })
@@ -170,7 +154,7 @@ func TestSMTPAuthPlainEncryption(t *testing.T) {
 
     serverAuth := smtpd.NewAuth()
     serverAuth.Extend("PLAIN", &smtpd.AuthPlain{
-        Auth: func(value string) (smtpd.AuthUser, bool) {
+        Auth: func(username, password string) (smtpd.AuthUser, bool) {
             return &TestUser{}, true
         },
     })
