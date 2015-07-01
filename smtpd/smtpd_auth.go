@@ -5,12 +5,6 @@ import (
     "strings"
 )
 
-// http://tools.ietf.org/html/rfc4422#section-3.1
-// https://en.wikipedia.org/wiki/Simple_Authentication_and_Security_Layer
-type AuthExtension interface {
-    Handle(*SMTPConn, string) error
-}
-
 type Auth struct {
     Mechanisms map[string]AuthExtension
 }
@@ -28,7 +22,7 @@ func (a *Auth) Handle(c *SMTPConn, args string) error {
     if m, ok := a.Mechanisms[mech[0]]; ok {
         return m.Handle(c, mech[1])
     } else {
-        return fmt.Errorf("AUTH mechanism %v not available", mech[0])
+        return &AuthError{500, fmt.Errorf("AUTH mechanism %v not available", mech[0])}
     }
 }
 
@@ -46,4 +40,23 @@ func (a *Auth) Extend(mechanism string, extension AuthExtension) error {
     }
     a.Mechanisms[mechanism] = extension
     return nil
+}
+
+// http://tools.ietf.org/html/rfc4422#section-3.1
+// https://en.wikipedia.org/wiki/Simple_Authentication_and_Security_Layer
+type AuthExtension interface {
+    Handle(*SMTPConn, string) error
+}
+
+type AuthError struct {
+    code int
+    err  error
+}
+
+func (a *AuthError) Code() int {
+    return a.code
+}
+
+func (a *AuthError) Error() string {
+    return a.err.Error()
 }

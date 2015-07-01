@@ -13,10 +13,9 @@ func TestSMTPAuthPLAIN(t *testing.T) {
 
     recorder := &MessageRecorder{}
     server := smtpd.NewServer(recorder.Record)
+    server.Auth = smtpd.NewAuth()
 
-    // authService := smtpd.Auth{}
-
-    // http://www.akadia.com/services/ssh_test_certificate.html
+    // to generate: http://www.akadia.com/services/ssh_test_certificate.html
     if err := server.UseTLS("./server.crt", "./server.key"); err != nil {
         t.Errorf("Server couldn't load TLS credentials")
     }
@@ -31,11 +30,11 @@ func TestSMTPAuthPLAIN(t *testing.T) {
         t.Errorf("Should be able to dial localhost: %v", err)
     }
 
-    if err := c.StartTLS(&tls.Config{ServerName: server.ServerName, InsecureSkipVerify: true}); err != nil {
+    if err := c.StartTLS(&tls.Config{ServerName: server.Name, InsecureSkipVerify: true}); err != nil {
         t.Errorf("Should be able to negotiate some TLS? %v", err)
     }
 
-    auth := smtp.PlainAuth("", "user@example.com", "password", server.ServerName)
+    auth := smtp.PlainAuth("", "user@example.com", "password", "127.0.0.1")
 
     if err := c.Auth(auth); err != nil {
         t.Errorf("Auth should have succeeded: %v", err)
@@ -46,6 +45,7 @@ func TestSMTPAuthPLAIN(t *testing.T) {
 func TestSMTPAuthLocking(t *testing.T) {
     recorder := &MessageRecorder{}
     server := smtpd.NewServer(recorder.Record)
+    server.ServerName = "localhost"
     go server.ListenAndServe("localhost:0")
     defer server.Close()
 
@@ -76,7 +76,7 @@ func TestSMTPAuthPLAINEncryption(t *testing.T) {
         t.Errorf("Should be able to dial localhost: %v", err)
     }
 
-    auth := smtp.PlainAuth("", "user@example.com", "password", "mail.example.com")
+    auth := smtp.PlainAuth("", "user@example.com", "password", "127.0.0.1")
 
     if err := c.Auth(auth); err == nil {
         t.Errorf("Should not be able to do PLAIN auth on an unencrypted connection")

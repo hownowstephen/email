@@ -41,6 +41,9 @@ type Server struct {
     // Handler is the handoff function for messages
     Handler MessageHandler
 
+    // Auth is an authentication-handling extension
+    Auth Extension
+
     // Extensions is a map of server-specific extensions & overrides, by verb
     Extensions map[string]Extension
 
@@ -234,11 +237,18 @@ ReadLoop:
             if !conn.IsTLS {
                 conn.WriteEHLO("STARTTLS")
             }
+            if !conn.IsAuthenticated && s.Auth != nil {
+                conn.WriteEHLO(fmt.Sprintf("AUTH %v", s.Auth.EHLO()))
+            }
             for verb, extension := range s.Extensions {
                 conn.WriteEHLO(fmt.Sprintf("%v %v", verb, extension.EHLO()))
             }
             conn.WriteSMTP(250, "HELP")
         // https://tools.ietf.org/html/rfc2821#section-4.1.1.2
+        // see also: http://tools.ietf.org/html/rfc4954#section-3
+        //  5.  An optional parameter using the keyword "AUTH" is added to the
+        // MAIL FROM command, and extends the maximum line length of the
+        // MAIL FROM command by 500 characters.
         case "MAIL":
             // This is wrong, won't always be an email address
             if email, err := extractEmail("to", args); err == nil {
@@ -308,13 +318,33 @@ ReadLoop:
                 log.Fatalf("Couldn't upgrade to TLS")
             }
             if err := tlsConn.Handshake(); err == nil {
-                conn = &SMTPConn{tlsConn, true, conn.Errors, conn.MaxSize}
+                conn = &SMTPConn{
+                    Conn:            tlsConn,
+                    IsTLS:           true,
+                    IsAuthenticated: conn.IsAuthenticated,
+                    Errors:          conn.Errors,
+                    MaxSize:         conn.MaxSize,
+                }
             } else {
                 log.Fatalf("Could not TLS handshake:%v", err)
             }
 
         case "AUTH":
-
+            if conn.IsAuthenticated {
+                conn.WriteSMTP(503, "You are already authenticated")
+            } else if s.Auth != nil {
+                if err := s.Auth.Handle(conn, args); err != nil {
+                    if authErr, ok := err.(*AuthError); ok {
+                        conn.WriteSMTP(authErr.Code(), authErr.Error())
+                    } else {
+                        conn.WriteSMTP(500, "Authentication failed")
+                    }
+                } else {
+                    conn.WriteSMTP(235, "Authentication succeeded")
+                }
+            } else {
+                conn.WriteSMTP(502, "Command not implemented")
+            }
         default:
 
             conn.WriteSMTP(500, "Syntax error, command unrecognised")

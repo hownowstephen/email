@@ -11,9 +11,10 @@ import (
 
 type SMTPConn struct {
 	net.Conn
-	IsTLS   bool
-	Errors  []error
-	MaxSize int
+	IsTLS           bool
+	IsAuthenticated bool
+	Errors          []error
+	MaxSize         int
 }
 
 // ReadSMTP
@@ -29,6 +30,7 @@ func (c *SMTPConn) ReadSMTP() (string, string, error) {
 			args = command[1]
 		}
 
+		log.Println("C:", verb, args)
 		return verb, args, nil
 	} else {
 		return "", "", err
@@ -65,7 +67,7 @@ func (c *SMTPConn) ReadUntil(suffix string) (value string, err error) {
 
 // WriteSMTP writes a general SMTP line
 func (c *SMTPConn) WriteSMTP(code int, message string) error {
-	log.Println(code, message)
+	log.Println("S:", code, message)
 	c.SetDeadline(time.Now().Add(10 * time.Second))
 	_, err := c.Write([]byte(fmt.Sprintf("%v %v", code, message) + "\r\n"))
 	return err
