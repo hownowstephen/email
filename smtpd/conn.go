@@ -11,10 +11,10 @@ import (
 
 type SMTPConn struct {
 	net.Conn
-	IsTLS           bool
-	IsAuthenticated bool
-	Errors          []error
-	MaxSize         int
+	IsTLS   bool
+	Errors  []error
+	MaxSize int
+	User    AuthUser
 }
 
 // ReadSMTP

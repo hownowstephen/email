@@ -9,13 +9,23 @@ import (
     "github.com/hownowstephen/email/smtpd"
 )
 
+type TestUser struct{}
+
+func (t *TestUser) IsUser(ident string) bool {
+    return true
+}
+
 func TestSMTPAuthPLAIN(t *testing.T) {
 
     recorder := &MessageRecorder{}
     server := smtpd.NewServer(recorder.Record)
 
     serverAuth := smtpd.NewAuth()
-    serverAuth.Extend("PLAIN", &smtpd.AuthPlain{})
+    serverAuth.Extend("PLAIN", &smtpd.AuthPlain{
+        Auth: func(value string) (smtpd.AuthUser, bool) {
+            return &TestUser{}, true
+        },
+    })
 
     server.Auth = serverAuth
 
@@ -49,7 +59,16 @@ func TestSMTPAuthPLAIN(t *testing.T) {
 func TestSMTPAuthLocking(t *testing.T) {
     recorder := &MessageRecorder{}
     server := smtpd.NewServer(recorder.Record)
-    server.ServerName = "localhost"
+
+    serverAuth := smtpd.NewAuth()
+    serverAuth.Extend("PLAIN", &smtpd.AuthPlain{
+        Auth: func(value string) (smtpd.AuthUser, bool) {
+            return &TestUser{}, true
+        },
+    })
+
+    server.Auth = serverAuth
+
     go server.ListenAndServe("localhost:0")
     defer server.Close()
 
@@ -69,6 +88,16 @@ func TestSMTPAuthLocking(t *testing.T) {
 func TestSMTPAuthPLAINEncryption(t *testing.T) {
     recorder := &MessageRecorder{}
     server := smtpd.NewServer(recorder.Record)
+
+    serverAuth := smtpd.NewAuth()
+    serverAuth.Extend("PLAIN", &smtpd.AuthPlain{
+        Auth: func(value string) (smtpd.AuthUser, bool) {
+            return &TestUser{}, true
+        },
+    })
+
+    server.Auth = serverAuth
+
     go server.ListenAndServe("localhost:0")
     defer server.Close()
 

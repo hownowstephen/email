@@ -218,6 +218,17 @@ ReadLoop:
             continue
         }
 
+        // Auth overrides
+        if s.Auth != nil && conn.User == nil {
+            switch verb {
+            case "AUTH", "EHLO", "HELO", "NOOP", "RSET", "QUIT", "STARTTLS":
+                // these are okay to call without authentication on an Auth-enabled server
+            default:
+                conn.WriteSMTP(530, "Authentication required")
+                continue
+            }
+        }
+
         // Handle any extensions / overrides before running default logic
         if _, ok := s.Extensions[verb]; ok {
             err := s.Extensions[verb].Handle(conn, args)
@@ -237,7 +248,7 @@ ReadLoop:
             if !conn.IsTLS {
                 conn.WriteEHLO("STARTTLS")
             }
-            if !conn.IsAuthenticated && s.Auth != nil {
+            if conn.User == nil && s.Auth != nil {
                 conn.WriteEHLO(fmt.Sprintf("AUTH %v", s.Auth.EHLO()))
             }
             for verb, extension := range s.Extensions {
@@ -319,23 +330,23 @@ ReadLoop:
             }
             if err := tlsConn.Handshake(); err == nil {
                 conn = &SMTPConn{
-                    Conn:            tlsConn,
-                    IsTLS:           true,
-                    IsAuthenticated: conn.IsAuthenticated,
-                    Errors:          conn.Errors,
-                    MaxSize:         conn.MaxSize,
+                    Conn:    tlsConn,
+                    IsTLS:   true,
+                    User:    conn.User,
+                    Errors:  conn.Errors,
+                    MaxSize: conn.MaxSize,
                 }
             } else {
                 log.Fatalf("Could not TLS handshake:%v", err)
             }
 
         case "AUTH":
-            if conn.IsAuthenticated {
+            if conn.User != nil {
                 conn.WriteSMTP(503, "You are already authenticated")
             } else if s.Auth != nil {
                 if err := s.Auth.Handle(conn, args); err != nil {
-                    if authErr, ok := err.(*AuthError); ok {
-                        conn.WriteSMTP(authErr.Code(), authErr.Error())
+                    if serr, ok := err.(*SMTPError); ok {
+                        conn.WriteSMTP(serr.Code(), serr.Error())
                     } else {
                         conn.WriteSMTP(500, "Authentication failed")
                     }
