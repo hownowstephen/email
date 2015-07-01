@@ -48,6 +48,19 @@ type AuthExtension interface {
     Handle(*SMTPConn, string) error
 }
 
+type AuthPlain struct{}
+
+func (a *AuthPlain) Handle(conn *SMTPConn, params string) error {
+
+    if strings.TrimSpace(params) == "" {
+        conn.WriteSMTP(334, "")
+        conn.ReadSMTP()
+        return nil
+    }
+
+    return nil
+}
+
 type AuthError struct {
     code int
     err  error

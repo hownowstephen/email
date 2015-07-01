@@ -13,7 +13,11 @@ func TestSMTPAuthPLAIN(t *testing.T) {
 
     recorder := &MessageRecorder{}
     server := smtpd.NewServer(recorder.Record)
-    server.Auth = smtpd.NewAuth()
+
+    serverAuth := smtpd.NewAuth()
+    serverAuth.Extend("PLAIN", &smtpd.AuthPlain{})
+
+    server.Auth = serverAuth
 
     // to generate: http://www.akadia.com/services/ssh_test_certificate.html
     if err := server.UseTLS("./server.crt", "./server.key"); err != nil {
