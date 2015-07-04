@@ -18,6 +18,10 @@ func (t *TestUser) IsUser(ident string) bool {
     return true
 }
 
+func (t *TestUser) Password() string {
+    return t.password
+}
+
 func TestSMTPAuthPlain(t *testing.T) {
     recorder := &MessageRecorder{}
     server := smtpd.NewServer(recorder.Record)
@@ -176,5 +180,44 @@ func TestSMTPAuthPlainEncryption(t *testing.T) {
 
     if err := c.Auth(auth); err == nil {
         t.Errorf("Should not be able to do PLAIN auth on an unencrypted connection")
+    }
+}
+
+func TestSMTPAuthCramMd5(t *testing.T) {
+    recorder := &MessageRecorder{}
+    server := smtpd.NewServer(recorder.Record)
+
+    serverAuth := smtpd.NewAuth()
+    serverAuth.Extend("CRAM-MD5", &smtpd.AuthCramMd5{
+        FindUser: func(username string) (smtpd.AuthUser, error) {
+            return &TestUser{"user@test.com", "password"}, nil
+        },
+    })
+
+    server.Auth = serverAuth
+
+    // to generate: http://www.akadia.com/services/ssh_test_certificate.html
+    if err := server.UseTLS("./server.crt", "./server.key"); err != nil {
+        t.Errorf("Server couldn't load TLS credentials")
+    }
+    go server.ListenAndServe("localhost:0")
+    defer server.Close()
+
+    time.Sleep(time.Second)
+
+    // Connect to the remote SMTP server.
+    c, err := smtp.Dial(server.Address())
+    if err != nil {
+        t.Errorf("Should be able to dial localhost: %v", err)
+    }
+
+    if err := c.StartTLS(&tls.Config{ServerName: server.Name, InsecureSkipVerify: true}); err != nil {
+        t.Errorf("Should be able to negotiate some TLS? %v", err)
+    }
+
+    auth := smtp.CRAMMD5Auth("user@test.com", "password")
+
+    if err := c.Auth(auth); err != nil {
+        t.Errorf("Auth should have succeeded: %v", err)
     }
 }

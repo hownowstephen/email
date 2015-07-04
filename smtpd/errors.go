@@ -3,6 +3,7 @@ package smtpd
 import "errors"
 
 var ErrAuthFailed = &SMTPError{535, errors.New("Authentication credentials invalid")}
+var ErrAuthCancelled = &SMTPError{501, errors.New("Cancelled")}
 var ErrRequiresTLS = &SMTPError{538, errors.New("Encryption required for requested authentication mechanism")}
 
 // SMTPError is an error + SMTP response code

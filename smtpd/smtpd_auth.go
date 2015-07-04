@@ -1,9 +1,17 @@
 package smtpd
 
 import (
+    "crypto/hmac"
+    "crypto/md5"
+    "crypto/rand"
     "encoding/base64"
     "fmt"
+    "math"
+    "math/big"
+    "os"
+    "strconv"
     "strings"
+    "time"
 )
 
 type Auth struct {
@@ -22,7 +30,11 @@ func (a *Auth) Handle(c *SMTPConn, args string) error {
     mech := strings.SplitN(args, " ", 2)
 
     if m, ok := a.Mechanisms[mech[0]]; ok {
-        if user, err := m.Handle(c, mech[1]); err == nil {
+        var args string
+        if len(mech) == 2 {
+            args = mech[1]
+        }
+        if user, err := m.Handle(c, args); err == nil {
             c.User = user
             return nil
         } else {
@@ -55,6 +67,7 @@ func (a *Auth) Extend(mechanism string, extension AuthExtension) error {
 // AuthUser should check if a given string identifies that user
 type AuthUser interface {
     IsUser(value string) bool
+    Password() string
 }
 
 // http://tools.ietf.org/html/rfc4422#section-3.1
@@ -112,5 +125,73 @@ func (a *AuthPlain) Handle(conn *SMTPConn, params string) (AuthUser, error) {
 }
 
 type AuthCramMd5 struct {
-    Auth SimpleAuthFunc
+    FindUser func(string) (AuthUser, error)
+}
+
+// challenge generates a CramMD5 challenge using the http://www.jwz.org/doc/mid.html recommendation
+func (a *AuthCramMd5) challenge() []byte {
+
+    wallTime := time.Now().Unix()
+    randValue, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt64))
+    if err != nil {
+        panic(err)
+    }
+
+    hostname, err := os.Hostname()
+    if err != nil {
+        hostname = "localhost"
+    }
+
+    messageId := "<" + strconv.FormatInt(wallTime, 36) + "." + strconv.FormatInt(randValue.Int64(), 36) + "@" + hostname + ">"
+
+    return []byte(messageId)
+}
+
+// Note: This is currently very weak & requires storing of the user's password in plaintext
+// one good alternative is to do the HMAC manually and expose handlers for pre-processing the
+// password MD5s
+func (a *AuthCramMd5) CheckResponse(response string, challenge []byte) (AuthUser, bool) {
+    if a.FindUser == nil {
+        return nil, false
+    }
+
+    if decoded, err := base64.StdEncoding.DecodeString(response); err == nil {
+        if parts := strings.SplitN(string(decoded), " ", 2); len(parts) == 2 {
+
+            if user, err := a.FindUser(parts[0]); err == nil {
+
+                d := hmac.New(md5.New, []byte(user.Password()))
+                d.Write(challenge)
+
+                if fmt.Sprintf("%x", d.Sum(nil)) == parts[1] {
+                    return user, true
+                }
+            }
+        }
+    }
+
+    return nil, false
+
+}
+
+// Handles the negotiation of an AUTH CRAM-MD5 request
+// https://en.wikipedia.org/wiki/CRAM-MD5
+// http://www.samlogic.net/articles/smtp-commands-reference-auth.htm
+func (a *AuthCramMd5) Handle(conn *SMTPConn, params string) (AuthUser, error) {
+
+    if !conn.IsTLS {
+        return nil, ErrRequiresTLS
+    }
+
+    myChallenge := a.challenge()
+    conn.WriteSMTP(334, base64.StdEncoding.EncodeToString(myChallenge))
+    if line, err := conn.ReadUntil("\r\n"); err == nil {
+        if strings.TrimSpace(line) == "*" {
+            return nil, ErrAuthCancelled
+        } else if user, ok := a.CheckResponse(strings.TrimSpace(line), myChallenge); ok {
+            return user, nil
+        }
+    }
+
+    return nil, ErrAuthFailed
 }
