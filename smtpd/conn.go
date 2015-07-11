@@ -17,7 +17,11 @@ type SMTPConn struct {
 	User    AuthUser
 }
 
-// ReadSMTP
+func (c *SMTPConn) Reset() {
+	c.User = nil
+}
+
+// ReadSMTP pulls a single SMTP command line (ending in a carriage return + newline)
 func (c *SMTPConn) ReadSMTP() (string, string, error) {
 	if value, err := c.ReadUntil("\r\n"); err == nil {
 		value = strings.TrimSpace(value)

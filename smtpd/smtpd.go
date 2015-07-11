@@ -52,6 +52,9 @@ type Server struct {
 
     // Server flags
     listeners []net.Listener
+
+    // help message to display in response to a HELP request
+    Help string
 }
 
 // NewServer creates a server with the default settings
@@ -117,6 +120,20 @@ func (s *Server) UseTLS(cert, key string) error {
         Rand:         rand.Reader,
         ServerName:   s.ServerName,
     }
+    return nil
+}
+
+// UseAuth assigns the server authentication extension
+func (s *Server) UseAuth(auth Extension) {
+    s.Auth = auth
+}
+
+// SetHelp sets a help message
+func (s *Server) SetHelp(message string) error {
+    if len(message) > 100 || strings.TrimSpace(message) == "" {
+        return fmt.Errorf("Message '%v' is not a valid HELP message. Must be less than 100 characters and non-empty", message)
+    }
+    s.Help = message
     return nil
 }
 
@@ -244,7 +261,7 @@ ReadLoop:
         switch verb {
         // https://tools.ietf.org/html/rfc2821#section-4.1.1.1
         case "HELO":
-            conn.WriteSMTP(250, fmt.Sprintf("%v Hello", s.Name))
+            conn.WriteSMTP(250, fmt.Sprintf("%v Hello", s.ServerName))
         case "EHLO":
             conn.WriteEHLO(fmt.Sprintf("%v %v", s.ServerName, s.Greeting(conn)))
             conn.WriteEHLO(fmt.Sprintf("SIZE %v", s.MaxSize))
@@ -296,28 +313,39 @@ ReadLoop:
             } else {
                 log.Fatalf("DATA read error: %v", err)
             }
-        // https://tools.ietf.org/html/rfc2821#section-4.1.1.5
+        // Reset the connection
+        // see: https://tools.ietf.org/html/rfc2821#section-4.1.1.5
         case "RSET":
+            conn.Reset()
             conn.WriteOK()
             return s.HandleSMTP(conn)
 
-        // https://tools.ietf.org/html/rfc2821#section-4.1.1.6
+        // Since this is a commonly abused SPAM aid, it's better to just
+        // default to 252 (apparent validity / could not verify). If this is not a concern, then
+        // the full `params` value will be the address to verify, respond with `conn.WriteOK()`
+        // see: https://tools.ietf.org/html/rfc2821#section-4.1.1.6
         case "VRFY":
-            conn.WriteOK()
+            conn.WriteSMTP(252, "But it was worth a shot, right?")
 
-        // https://tools.ietf.org/html/rfc2821#section-4.1.1.7
+        // see: https://tools.ietf.org/html/rfc2821#section-4.1.1.7
         case "EXPN":
-            conn.WriteOK()
+            conn.WriteSMTP(252, "Maybe, maybe not")
 
-        // https://tools.ietf.org/html/rfc2821#section-4.1.1.8
+        // see: https://tools.ietf.org/html/rfc2821#section-4.1.1.8
         case "HELP":
-            conn.WriteOK()
+            msg := fmt.Sprintf("contact the owner of %v for more information", s.ServerName)
+            if s.Help != "" {
+                msg = s.Help
+            }
+            conn.WriteSMTP(214, msg)
 
-        // https://tools.ietf.org/html/rfc2821#section-4.1.1.9
+        // NOOP doesn't do anything. Big surprise
+        // see: https://tools.ietf.org/html/rfc2821#section-4.1.1.9
         case "NOOP":
             conn.WriteOK()
 
-        // https://tools.ietf.org/html/rfc2821#section-4.1.1.10
+        // Say goodbye and close the connection
+        // see: https://tools.ietf.org/html/rfc2821#section-4.1.1.10
         case "QUIT":
             conn.WriteSMTP(221, "Bye")
             break ReadLoop
@@ -343,6 +371,9 @@ ReadLoop:
                 log.Fatalf("Could not TLS handshake:%v", err)
             }
 
+        // AUTH uses the configured authentication handler to perform an SMTP-AUTH
+        // as defined by the ESMTP AUTH extension
+        // see: http://tools.ietf.org/html/rfc4954
         case "AUTH":
             if conn.User != nil {
                 conn.WriteSMTP(503, "You are already authenticated")
@@ -360,7 +391,6 @@ ReadLoop:
                 conn.WriteSMTP(502, "Command not implemented")
             }
         default:
-
             conn.WriteSMTP(500, "Syntax error, command unrecognised")
             conn.Errors = append(conn.Errors, fmt.Errorf("bad input: %v %v", verb, args))
             if len(conn.Errors) > 3 {
