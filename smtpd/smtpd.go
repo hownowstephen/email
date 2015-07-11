@@ -7,8 +7,8 @@ import (
     "io"
     "log"
     "net"
+    "net/mail"
     "os"
-    "regexp"
     "strings"
     "time"
 
@@ -275,23 +275,24 @@ ReadLoop:
                 conn.WriteEHLO(fmt.Sprintf("%v %v", verb, extension.EHLO()))
             }
             conn.WriteSMTP(250, "HELP")
-        // https://tools.ietf.org/html/rfc2821#section-4.1.1.2
-        // see also: http://tools.ietf.org/html/rfc4954#section-3
-        //  5.  An optional parameter using the keyword "AUTH" is added to the
-        // MAIL FROM command, and extends the maximum line length of the
-        // MAIL FROM command by 500 characters.
+        // see: https://tools.ietf.org/html/rfc2821#section-4.1.1.2
+        // This doesn't implement the RFC4594 addition of an AUTH param to the MAIL command
+        // see: http://tools.ietf.org/html/rfc4954#section-3 for details
         case "MAIL":
-            // This is wrong, won't always be an email address
-            if email, err := extractEmail("to", args); err == nil {
-                log.Println("Message from:", email)
+            if from, err := s.PullAddress("FROM", args); err == nil {
+                conn.FromAddr = from
+                conn.WriteSMTP(250, "Accepted")
+            } else {
+                conn.WriteSMTP(501, err.Error())
             }
-            conn.WriteOK()
         // https://tools.ietf.org/html/rfc2821#section-4.1.1.3
         case "RCPT":
-            if email, err := extractEmail("from", args); err == nil {
-                log.Println("Message to:", email)
+            if to, err := s.PullAddress("TO", args); err == nil {
+                conn.ToAddr = append(conn.ToAddr, to)
+                conn.WriteSMTP(250, "Accepted")
+            } else {
+                conn.WriteSMTP(501, err.Error())
             }
-            conn.WriteSMTP(250, "Accepted")
         // https://tools.ietf.org/html/rfc2821#section-4.1.1.4
         case "DATA":
             conn.WriteSMTP(354, "Enter message, ending with \".\" on a line by itself")
@@ -404,29 +405,11 @@ ReadLoop:
     return nil
 }
 
-func extractEmail(param, str string) (address string, err error) {
-    var host, name string
-    re, _ := regexp.Compile(fmt.Sprintf(`(?i)%v:<(.+?)@(.+?)>`, param))
-    if matched := re.FindStringSubmatch(str); len(matched) > 2 {
-        host = validHost(matched[2])
-        name = matched[1]
-    } else {
-        if res := strings.Split(str, "@"); len(res) > 1 {
-            name = res[0]
-            host = validHost(res[1])
-        }
+func (s *Server) PullAddress(argName string, args string) (*mail.Address, error) {
+    argSplit := strings.SplitN(args, ":", 2)
+    if len(argSplit) == 2 && strings.ToUpper(argSplit[0]) == argName {
+        return mail.ParseAddress(argSplit[1])
     }
-    if host == "" || name == "" {
-        err = fmt.Errorf("Invalid address, [%v@%v] address: %v", name, host, str)
-    }
-    return fmt.Sprintf("%v@%v", name, host), err
-}
 
-func validHost(host string) string {
-    host = strings.Trim(host, " ")
-    re, _ := regexp.Compile(`^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$`)
-    if re.MatchString(host) {
-        return host
-    }
-    return ""
+    return nil, fmt.Errorf("Bad arguments")
 }

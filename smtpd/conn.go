@@ -5,20 +5,27 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/mail"
 	"strings"
+	"sync"
 	"time"
 )
 
 type SMTPConn struct {
 	net.Conn
-	IsTLS   bool
-	Errors  []error
-	MaxSize int
-	User    AuthUser
+	IsTLS    bool
+	Errors   []error
+	MaxSize  int
+	User     AuthUser
+	FromAddr *mail.Address
+	ToAddr   []*mail.Address
+	lock     sync.Mutex
 }
 
 func (c *SMTPConn) Reset() {
 	c.User = nil
+	c.FromAddr = nil
+	c.ToAddr = make([]*mail.Address, 0)
 }
 
 // ReadSMTP pulls a single SMTP command line (ending in a carriage return + newline)
