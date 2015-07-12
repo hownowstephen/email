@@ -13,19 +13,40 @@ import (
 
 type SMTPConn struct {
 	net.Conn
-	IsTLS    bool
-	Errors   []error
-	MaxSize  int
-	User     AuthUser
-	FromAddr *mail.Address
-	ToAddr   []*mail.Address
-	lock     sync.Mutex
+	IsTLS       bool
+	Errors      []error
+	MaxSize     int
+	User        AuthUser
+	FromAddr    *mail.Address
+	ToAddr      []*mail.Address
+	lock        sync.Mutex
+	transaction int
+}
+
+// StartTX starts a new MAIL transaction
+func (c *SMTPConn) StartTX(from *mail.Address) error {
+	if c.transaction != 0 {
+		return ErrTransaction
+	}
+	c.transaction = int(time.Now().UnixNano())
+	c.FromAddr = from
+	return nil
+}
+
+// EndTX closes off a MAIL transaction and returns a message object
+func (c *SMTPConn) EndTX() error {
+	if c.transaction == 0 {
+		return ErrTransaction
+	}
+	c.transaction = 0
+	return nil
 }
 
 func (c *SMTPConn) Reset() {
 	c.User = nil
 	c.FromAddr = nil
 	c.ToAddr = make([]*mail.Address, 0)
+	c.transaction = 0
 }
 
 // ReadSMTP pulls a single SMTP command line (ending in a carriage return + newline)

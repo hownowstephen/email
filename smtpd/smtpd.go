@@ -263,6 +263,9 @@ ReadLoop:
         case "HELO":
             conn.WriteSMTP(250, fmt.Sprintf("%v Hello", s.ServerName))
         case "EHLO":
+            // see: https://tools.ietf.org/html/rfc2821#section-4.1.4
+            conn.Reset()
+
             conn.WriteEHLO(fmt.Sprintf("%v %v", s.ServerName, s.Greeting(conn)))
             conn.WriteEHLO(fmt.Sprintf("SIZE %v", s.MaxSize))
             if !conn.IsTLS {
@@ -275,19 +278,27 @@ ReadLoop:
                 conn.WriteEHLO(fmt.Sprintf("%v %v", verb, extension.EHLO()))
             }
             conn.WriteSMTP(250, "HELP")
+        // The MAIL command starts off a new mail transaction
         // see: https://tools.ietf.org/html/rfc2821#section-4.1.1.2
         // This doesn't implement the RFC4594 addition of an AUTH param to the MAIL command
         // see: http://tools.ietf.org/html/rfc4954#section-3 for details
         case "MAIL":
-            if from, err := s.PullAddress("FROM", args); err == nil {
-                conn.FromAddr = from
-                conn.WriteSMTP(250, "Accepted")
+            if from, err := s.GetAddressArg("FROM", args); err == nil {
+                if conn.User == nil || conn.User.IsUser(from.Address) {
+                    if err := conn.StartTX(from); err == nil {
+                        conn.WriteSMTP(250, "Accepted")
+                    } else {
+                        conn.WriteSMTP(501, err.Error())
+                    }
+                } else {
+                    conn.WriteSMTP(501, fmt.Sprintf("Cannot send mail as %v", from))
+                }
             } else {
                 conn.WriteSMTP(501, err.Error())
             }
         // https://tools.ietf.org/html/rfc2821#section-4.1.1.3
         case "RCPT":
-            if to, err := s.PullAddress("TO", args); err == nil {
+            if to, err := s.GetAddressArg("TO", args); err == nil {
                 conn.ToAddr = append(conn.ToAddr, to)
                 conn.WriteSMTP(250, "Accepted")
             } else {
@@ -299,7 +310,7 @@ ReadLoop:
 
             if data, err := conn.ReadData(); err == nil {
 
-                if message, err := email.NewMessage([]byte(data)); err == nil {
+                if message, err := email.NewMessage([]byte(data)); err == nil && (conn.EndTX() == nil) {
 
                     if err := s.handleMessage(message); err == nil {
                         conn.WriteSMTP(250, fmt.Sprintf("OK : queued as %v", message.ID()))
@@ -319,7 +330,6 @@ ReadLoop:
         case "RSET":
             conn.Reset()
             conn.WriteOK()
-            return s.HandleSMTP(conn)
 
         // Since this is a commonly abused SPAM aid, it's better to just
         // default to 252 (apparent validity / could not verify). If this is not a concern, then
@@ -405,7 +415,7 @@ ReadLoop:
     return nil
 }
 
-func (s *Server) PullAddress(argName string, args string) (*mail.Address, error) {
+func (s *Server) GetAddressArg(argName string, args string) (*mail.Address, error) {
     argSplit := strings.SplitN(args, ":", 2)
     if len(argSplit) == 2 && strings.ToUpper(argSplit[0]) == argName {
         return mail.ParseAddress(argSplit[1])
