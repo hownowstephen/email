@@ -170,7 +170,8 @@ func (s *Server) ListenAndServe(addr string) error {
             // it was a timeout
             continue
         } else if ok && !netErr.Temporary() {
-            break
+            log.Println("Net error: ", netErr)
+            continue
         }
 
         if err != nil {
@@ -268,7 +269,7 @@ ReadLoop:
 
             conn.WriteEHLO(fmt.Sprintf("%v %v", s.ServerName, s.Greeting(conn)))
             conn.WriteEHLO(fmt.Sprintf("SIZE %v", s.MaxSize))
-            if !conn.IsTLS {
+            if !conn.IsTLS && s.TLSConfig != nil {
                 conn.WriteEHLO("STARTTLS")
             }
             if conn.User == nil && s.Auth != nil {
@@ -323,7 +324,7 @@ ReadLoop:
                 }
 
             } else {
-                log.Fatalf("DATA read error: %v", err)
+                log.Println("DATA read error: %v", err)
             }
         // Reset the connection
         // see: https://tools.ietf.org/html/rfc2821#section-4.1.1.5
