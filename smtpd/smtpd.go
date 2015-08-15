@@ -170,8 +170,7 @@ func (s *Server) ListenAndServe(addr string) error {
             // it was a timeout
             continue
         } else if ok && !netErr.Temporary() {
-            log.Println("Net error: ", netErr)
-            continue
+            return netErr
         }
 
         if err != nil {
@@ -203,7 +202,6 @@ func (s *Server) handleMessage(m *email.Message) error {
 }
 
 func (s *Server) HandleSMTP(conn *SMTPConn) error {
-    defer conn.Close()
     conn.WriteSMTP(220, fmt.Sprintf("%v %v", s.Name, time.Now().Format(time.RFC1123Z)))
 
 ReadLoop:
@@ -413,7 +411,7 @@ ReadLoop:
         }
     }
 
-    return nil
+    return conn.Close()
 }
 
 func (s *Server) GetAddressArg(argName string, args string) (*mail.Address, error) {
