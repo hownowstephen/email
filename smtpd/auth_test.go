@@ -34,11 +34,8 @@ func TestSMTPAuthPlain(t *testing.T) {
     })
 
     server.Auth = serverAuth
+    server.TLSConfig = TestingTLSConfig()
 
-    // to generate: http://www.akadia.com/services/ssh_test_certificate.html
-    if err := server.UseTLS("./server.crt", "./server.key"); err != nil {
-        t.Errorf("Server couldn't load TLS credentials")
-    }
     go server.ListenAndServe("localhost:0")
     defer server.Close()
 
@@ -81,11 +78,8 @@ func TestSMTPAuthPlainRejection(t *testing.T) {
     })
 
     server.Auth = serverAuth
+    server.TLSConfig = TestingTLSConfig()
 
-    // to generate: http://www.akadia.com/services/ssh_test_certificate.html
-    if err := server.UseTLS("./server.crt", "./server.key"); err != nil {
-        t.Errorf("Server couldn't load TLS credentials")
-    }
     go server.ListenAndServe("localhost:0")
     defer server.Close()
 
@@ -164,6 +158,7 @@ func TestSMTPAuthPlainEncryption(t *testing.T) {
     })
 
     server.Auth = serverAuth
+    server.TLSConfig = TestingTLSConfig()
 
     go server.ListenAndServe("localhost:0")
     defer server.Close()
@@ -195,11 +190,8 @@ func TestSMTPAuthCramMd5(t *testing.T) {
     })
 
     server.Auth = serverAuth
+    server.TLSConfig = TestingTLSConfig()
 
-    // to generate: http://www.akadia.com/services/ssh_test_certificate.html
-    if err := server.UseTLS("./server.crt", "./server.key"); err != nil {
-        t.Errorf("Server couldn't load TLS credentials")
-    }
     go server.ListenAndServe("localhost:0")
     defer server.Close()
 
