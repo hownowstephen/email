@@ -36,7 +36,7 @@ type Server struct {
     MaxCommands int
 
     // RateLimiter gets called before proceeding through to message handling
-    RateLimiter func(*SMTPConn) bool
+    RateLimiter func(*Conn) bool
 
     // Handler is the handoff function for messages
     Handler MessageHandler
@@ -81,7 +81,7 @@ func (s *Server) Close() {
     }
 }
 
-func (s *Server) Greeting(conn *SMTPConn) string {
+func (s *Server) Greeting(conn *Conn) string {
     return fmt.Sprintf("Welcome! [%v]", conn.LocalAddr())
 }
 
@@ -147,13 +147,6 @@ func (s *Server) ListenAndServe(addr string) error {
         return err
     }
 
-    // var listener *net.TCPListener
-    // if tl, ok := l.(*net.TCPListener); ok {
-    //     listener = tl
-    // } else {
-    //     log.Fatalf("Couldn't open a TCP listener, got %v instead", l)
-    // }
-
     var clientID int64
     clientID = 1
 
@@ -177,7 +170,7 @@ func (s *Server) ListenAndServe(addr string) error {
             log.Println("Could not handle request:", err)
             continue
         }
-        go s.HandleSMTP(&SMTPConn{
+        go s.HandleSMTP(&Conn{
             Conn:    conn,
             IsTLS:   false,
             Errors:  []error{},
@@ -201,7 +194,8 @@ func (s *Server) handleMessage(m *email.Message) error {
     return s.Handler(m)
 }
 
-func (s *Server) HandleSMTP(conn *SMTPConn) error {
+func (s *Server) HandleSMTP(conn *Conn) error {
+    defer conn.Close()
     conn.WriteSMTP(220, fmt.Sprintf("%v %v", s.Name, time.Now().Format(time.RFC1123Z)))
 
 ReadLoop:
@@ -370,7 +364,7 @@ ReadLoop:
                 log.Fatalf("Couldn't upgrade to TLS")
             }
             if err := tlsConn.Handshake(); err == nil {
-                conn = &SMTPConn{
+                conn = &Conn{
                     Conn:    tlsConn,
                     IsTLS:   true,
                     User:    conn.User,

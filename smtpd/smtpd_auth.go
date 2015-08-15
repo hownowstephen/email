@@ -25,7 +25,7 @@ func NewAuth() *Auth {
 }
 
 // Handle authentication by handing off to one of the configured auth mechanisms
-func (a *Auth) Handle(c *SMTPConn, args string) error {
+func (a *Auth) Handle(c *Conn, args string) error {
 
     mech := strings.SplitN(args, " ", 2)
 
@@ -73,7 +73,7 @@ type AuthUser interface {
 // http://tools.ietf.org/html/rfc4422#section-3.1
 // https://en.wikipedia.org/wiki/Simple_Authentication_and_Security_Layer
 type AuthExtension interface {
-    Handle(*SMTPConn, string) (AuthUser, error)
+    Handle(*Conn, string) (AuthUser, error)
 }
 
 type SimpleAuthFunc func(string, string) (AuthUser, bool)
@@ -97,7 +97,7 @@ func (a *AuthPlain) unpack(line string) (string, string, error) {
 }
 
 // Handles the negotiation of an AUTH PLAIN request
-func (a *AuthPlain) Handle(conn *SMTPConn, params string) (AuthUser, error) {
+func (a *AuthPlain) Handle(conn *Conn, params string) (AuthUser, error) {
 
     if !conn.IsTLS {
         return nil, ErrRequiresTLS
@@ -177,7 +177,7 @@ func (a *AuthCramMd5) CheckResponse(response string, challenge []byte) (AuthUser
 // Handles the negotiation of an AUTH CRAM-MD5 request
 // https://en.wikipedia.org/wiki/CRAM-MD5
 // http://www.samlogic.net/articles/smtp-commands-reference-auth.htm
-func (a *AuthCramMd5) Handle(conn *SMTPConn, params string) (AuthUser, error) {
+func (a *AuthCramMd5) Handle(conn *Conn, params string) (AuthUser, error) {
 
     if !conn.IsTLS {
         return nil, ErrRequiresTLS

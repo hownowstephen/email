@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-type SMTPConn struct {
+type Conn struct {
 	net.Conn
 	IsTLS       bool
 	Errors      []error
@@ -24,7 +24,7 @@ type SMTPConn struct {
 }
 
 // StartTX starts a new MAIL transaction
-func (c *SMTPConn) StartTX(from *mail.Address) error {
+func (c *Conn) StartTX(from *mail.Address) error {
 	if c.transaction != 0 {
 		return ErrTransaction
 	}
@@ -34,7 +34,7 @@ func (c *SMTPConn) StartTX(from *mail.Address) error {
 }
 
 // EndTX closes off a MAIL transaction and returns a message object
-func (c *SMTPConn) EndTX() error {
+func (c *Conn) EndTX() error {
 	if c.transaction == 0 {
 		return ErrTransaction
 	}
@@ -42,7 +42,7 @@ func (c *SMTPConn) EndTX() error {
 	return nil
 }
 
-func (c *SMTPConn) Reset() {
+func (c *Conn) Reset() {
 	c.User = nil
 	c.FromAddr = nil
 	c.ToAddr = make([]*mail.Address, 0)
@@ -50,7 +50,7 @@ func (c *SMTPConn) Reset() {
 }
 
 // ReadSMTP pulls a single SMTP command line (ending in a carriage return + newline)
-func (c *SMTPConn) ReadSMTP() (string, string, error) {
+func (c *Conn) ReadSMTP() (string, string, error) {
 	if value, err := c.ReadUntil("\r\n"); err == nil {
 		value = strings.TrimSpace(value)
 
@@ -70,12 +70,12 @@ func (c *SMTPConn) ReadSMTP() (string, string, error) {
 }
 
 // readData brokers the special case of SMTP data messages
-func (c *SMTPConn) ReadData() (string, error) {
+func (c *Conn) ReadData() (string, error) {
 	return c.ReadUntil("\r\n.\r\n")
 }
 
 // rawRead performs the actual read from the connection, reading each line up to the first occurrence of suffix
-func (c *SMTPConn) ReadUntil(suffix string) (value string, err error) {
+func (c *Conn) ReadUntil(suffix string) (value string, err error) {
 	var reply string
 	reader := bufio.NewReader(c)
 	for err == nil {
@@ -98,7 +98,7 @@ func (c *SMTPConn) ReadUntil(suffix string) (value string, err error) {
 }
 
 // WriteSMTP writes a general SMTP line
-func (c *SMTPConn) WriteSMTP(code int, message string) error {
+func (c *Conn) WriteSMTP(code int, message string) error {
 	log.Println("S:", code, message)
 	c.SetDeadline(time.Now().Add(10 * time.Second))
 	_, err := c.Write([]byte(fmt.Sprintf("%v %v", code, message) + "\r\n"))
@@ -106,7 +106,7 @@ func (c *SMTPConn) WriteSMTP(code int, message string) error {
 }
 
 // WriteEHLO writes an EHLO line, see https://tools.ietf.org/html/rfc2821#section-4.1.1.1
-func (c *SMTPConn) WriteEHLO(message string) error {
+func (c *Conn) WriteEHLO(message string) error {
 	log.Printf("S: 250-%v", message)
 	c.SetDeadline(time.Now().Add(10 * time.Second))
 	_, err := c.Write([]byte(fmt.Sprintf("250-%v", message) + "\r\n"))
@@ -114,6 +114,6 @@ func (c *SMTPConn) WriteEHLO(message string) error {
 }
 
 // WriteOK is a convenience function for sending the default OK response
-func (c *SMTPConn) WriteOK() error {
+func (c *Conn) WriteOK() error {
 	return c.WriteSMTP(250, "OK")
 }

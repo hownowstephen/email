@@ -1,16 +1,16 @@
 package smtpd
 
 type Extension interface {
-    Handle(*SMTPConn, string) error
+    Handle(*Conn, string) error
     EHLO() string
 }
 
 type SimpleExtension struct {
-    Handler func(*SMTPConn, string) error
+    Handler func(*Conn, string) error
     Ehlo    string
 }
 
-func (s *SimpleExtension) Handle(c *SMTPConn, args string) error {
+func (s *SimpleExtension) Handle(c *Conn, args string) error {
     return s.Handler(c, args)
 }
 
