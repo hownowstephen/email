@@ -39,7 +39,7 @@ func TestSMTPAuthPlain(t *testing.T) {
     go server.ListenAndServe("localhost:0")
     defer server.Close()
 
-    time.Sleep(time.Second)
+    WaitUntilAlive(server)
 
     // Connect to the remote SMTP server.
     c, err := smtp.Dial(server.Address())
@@ -83,7 +83,7 @@ func TestSMTPAuthPlainRejection(t *testing.T) {
     go server.ListenAndServe("localhost:0")
     defer server.Close()
 
-    time.Sleep(time.Second)
+    WaitUntilAlive(server)
 
     // Connect to the remote SMTP server.
     c, err := smtp.Dial(server.Address())
@@ -133,7 +133,7 @@ func TestSMTPAuthLocking(t *testing.T) {
     go server.ListenAndServe("localhost:0")
     defer server.Close()
 
-    time.Sleep(time.Second)
+    WaitUntilAlive(server)
 
     // Connect to the remote SMTP server.
     c, err := smtp.Dial(server.Address())
@@ -195,7 +195,7 @@ func TestSMTPAuthCramMd5(t *testing.T) {
     go server.ListenAndServe("localhost:0")
     defer server.Close()
 
-    time.Sleep(time.Second)
+    WaitUntilAlive(server)
 
     // Connect to the remote SMTP server.
     c, err := smtp.Dial(server.Address())

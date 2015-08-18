@@ -3,7 +3,6 @@ package smtpd
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"net"
 	"net/mail"
 	"strings"
@@ -12,13 +11,20 @@ import (
 )
 
 type Conn struct {
+	// Conn is primarily a wrapper around a net.Conn object
 	net.Conn
-	IsTLS       bool
-	Errors      []error
-	MaxSize     int
-	User        AuthUser
-	FromAddr    *mail.Address
-	ToAddr      []*mail.Address
+
+	// Track some mutable for this connection
+	IsTLS    bool
+	Errors   []error
+	User     AuthUser
+	FromAddr *mail.Address
+	ToAddr   []*mail.Address
+
+	// Configuration options
+	MaxSize int
+
+	// internal state
 	lock        sync.Mutex
 	transaction int
 }
@@ -62,7 +68,6 @@ func (c *Conn) ReadSMTP() (string, string, error) {
 			args = command[1]
 		}
 
-		log.Println("C:", verb, args)
 		return verb, args, nil
 	} else {
 		return "", "", err
@@ -99,7 +104,6 @@ func (c *Conn) ReadUntil(suffix string) (value string, err error) {
 
 // WriteSMTP writes a general SMTP line
 func (c *Conn) WriteSMTP(code int, message string) error {
-	log.Println("S:", code, message)
 	c.SetDeadline(time.Now().Add(10 * time.Second))
 	_, err := c.Write([]byte(fmt.Sprintf("%v %v", code, message) + "\r\n"))
 	return err
@@ -107,7 +111,6 @@ func (c *Conn) WriteSMTP(code int, message string) error {
 
 // WriteEHLO writes an EHLO line, see https://tools.ietf.org/html/rfc2821#section-4.1.1.1
 func (c *Conn) WriteEHLO(message string) error {
-	log.Printf("S: 250-%v", message)
 	c.SetDeadline(time.Now().Add(10 * time.Second))
 	_, err := c.Write([]byte(fmt.Sprintf("250-%v", message) + "\r\n"))
 	return err

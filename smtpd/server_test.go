@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/smtp"
 	"testing"
-	"time"
 
 	"github.com/hownowstephen/email"
 	"github.com/hownowstephen/email/smtpd"
@@ -26,7 +25,7 @@ func TestSMTPServer(t *testing.T) {
 	go server.ListenAndServe("localhost:0")
 	defer server.Close()
 
-	time.Sleep(time.Second)
+	WaitUntilAlive(server)
 
 	// Connect to the remote SMTP server.
 	c, err := smtp.Dial(server.Address())

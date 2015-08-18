@@ -55,6 +55,9 @@ type Server struct {
 
     // help message to display in response to a HELP request
     Help string
+
+    // Logger to print out status info
+    Logger email.Logger
 }
 
 // NewServer creates a server with the default settings
@@ -71,6 +74,7 @@ func NewServer(handler func(*email.Message) error) *Server {
         Handler:     handler,
         Extensions:  make(map[string]Extension),
         Disabled:    make(map[string]bool),
+        Logger:      &email.QuietLogger{},
     }
 }
 
@@ -143,7 +147,7 @@ func (s *Server) ListenAndServe(addr string) error {
     // Start listening for SMTP connections
     listener, err := net.Listen("tcp", addr)
     if err != nil {
-        log.Fatalf("Cannot listen on %v (%v)", addr, err)
+        s.Logger.Printf("Cannot listen on %v (%v)", addr, err)
         return err
     }
 
@@ -205,7 +209,7 @@ ReadLoop:
         var err error
 
         if verb, args, err = conn.ReadSMTP(); err != nil {
-            log.Printf("Read error: %v", err)
+            s.Logger.Printf("Read error: %v", err)
             if err == io.EOF {
                 // client closed the connection already
                 break ReadLoop
@@ -246,7 +250,7 @@ ReadLoop:
         if _, ok := s.Extensions[verb]; ok {
             err := s.Extensions[verb].Handle(conn, args)
             if err != nil {
-                log.Printf("Error? %v", err)
+                s.Logger.Printf("Error? %v", err)
             }
             continue
         }
@@ -316,7 +320,7 @@ ReadLoop:
                 }
 
             } else {
-                log.Println("DATA read error: %v", err)
+                s.Logger.Println("DATA read error: %v", err)
             }
         // Reset the connection
         // see: https://tools.ietf.org/html/rfc2821#section-4.1.1.5
@@ -361,7 +365,8 @@ ReadLoop:
             // upgrade to TLS
             tlsConn := tls.Server(conn, s.TLSConfig)
             if tlsConn == nil {
-                log.Fatalf("Couldn't upgrade to TLS")
+                s.Logger.Printf("Couldn't upgrade to TLS")
+                break ReadLoop
             }
             if err := tlsConn.Handshake(); err == nil {
                 conn = &Conn{
@@ -372,7 +377,8 @@ ReadLoop:
                     MaxSize: conn.MaxSize,
                 }
             } else {
-                log.Fatalf("Could not TLS handshake:%v", err)
+                s.Logger.Printf("Could not TLS handshake:%v", err)
+                break ReadLoop
             }
 
         // AUTH uses the configured authentication handler to perform an SMTP-AUTH

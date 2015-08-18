@@ -9,11 +9,16 @@ import (
     "math/big"
     "net"
     "sync"
+    "testing"
+    "time"
+
+    "github.com/hownowstephen/email/smtpd"
 )
 
 var tlsGen sync.Once
 var tlsConfig *tls.Config
 
+// TestingTLSConfig generates a TLS certificate for the testing session
 func TestingTLSConfig() *tls.Config {
 
     tlsGen.Do(func() {
@@ -58,4 +63,29 @@ func TestingTLSConfig() *tls.Config {
     })
 
     return tlsConfig
+}
+
+// WaitUntilAlive is a helper function to allow us to not start tests until a server boots
+func WaitUntilAlive(s *smtpd.Server) {
+    d, _ := time.ParseDuration("20ms")
+    for s.Address() == "" {
+        time.Sleep(d)
+    }
+}
+
+// TestLogger sends all log messages to the testing.T object, to be displayed as it sees fit
+type TestLogger struct {
+    t *testing.T
+}
+
+func (t *TestLogger) Print(v ...interface{}) {
+    t.t.Log(v...)
+}
+
+func (t *TestLogger) Println(v ...interface{}) {
+    t.Print(v...)
+}
+
+func (t *TestLogger) Printf(format string, v ...interface{}) {
+    t.t.Logf(format, v)
 }
