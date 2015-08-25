@@ -29,7 +29,7 @@ func (a *Auth) Handle(c *Conn, args string) error {
 
     mech := strings.SplitN(args, " ", 2)
 
-    if m, ok := a.Mechanisms[mech[0]]; ok {
+    if m, ok := a.Mechanisms[strings.ToUpper(mech[0])]; ok {
         var args string
         if len(mech) == 2 {
             args = mech[1]
@@ -57,6 +57,7 @@ func (a *Auth) EHLO() string {
 
 // Extend the auth handler by adding a new mechanism
 func (a *Auth) Extend(mechanism string, extension AuthExtension) error {
+    mechanism = strings.ToUpper(mechanism)
     if _, ok := a.Mechanisms[mechanism]; ok {
         return fmt.Errorf("AUTH mechanism %v is already implemented", mechanism)
     }
