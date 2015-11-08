@@ -368,6 +368,8 @@ ReadLoop:
                 s.Logger.Printf("Couldn't upgrade to TLS")
                 break ReadLoop
             }
+
+            tlsConn.SetDeadline(time.Now().Add(10 * time.Second))
             if err := tlsConn.Handshake(); err == nil {
                 conn = &Conn{
                     Conn:    tlsConn,
@@ -411,7 +413,8 @@ ReadLoop:
         }
     }
 
-    return conn.Close()
+    // conn.Close() is handled in a defer
+    return nil
 }
 
 func (s *Server) GetAddressArg(argName string, args string) (*mail.Address, error) {
