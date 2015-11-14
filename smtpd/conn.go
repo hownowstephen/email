@@ -1,10 +1,10 @@
 package smtpd
 
 import (
-	"bufio"
 	"fmt"
 	"net"
 	"net/mail"
+	"net/textproto"
 	"strings"
 	"sync"
 	"time"
@@ -22,11 +22,24 @@ type Conn struct {
 	ToAddr   []*mail.Address
 
 	// Configuration options
-	MaxSize int
+	MaxSize      int
+	ReadTimeout  int64
+	WriteTimeout int64
 
 	// internal state
 	lock        sync.Mutex
 	transaction int
+
+	asTextProto sync.Once
+	textProto   *textproto.Conn
+}
+
+// tp returns a textproto wrapper for this connection
+func (c *Conn) tp() *textproto.Conn {
+	c.asTextProto.Do(func() {
+		c.textProto = textproto.NewConn(c)
+	})
+	return c.textProto
 }
 
 // StartTX starts a new MAIL transaction
@@ -57,11 +70,9 @@ func (c *Conn) Reset() {
 
 // ReadSMTP pulls a single SMTP command line (ending in a carriage return + newline)
 func (c *Conn) ReadSMTP() (string, string, error) {
-	if value, err := c.ReadUntil("\r\n"); err == nil {
-		value = strings.TrimSpace(value)
-
+	if line, err := c.tp().ReadLine(); err == nil {
 		var args string
-		command := strings.SplitN(value, " ", 2)
+		command := strings.SplitN(line, " ", 2)
 
 		verb := strings.ToUpper(command[0])
 		if len(command) > 1 {
@@ -74,44 +85,29 @@ func (c *Conn) ReadSMTP() (string, string, error) {
 	}
 }
 
-// readData brokers the special case of SMTP data messages
-func (c *Conn) ReadData() (string, error) {
-	return c.ReadUntil("\r\n.\r\n")
+// ReadLine reads a single line from the client
+func (c *Conn) ReadLine() (string, error) {
+	c.SetReadDeadline(time.Now().Add(time.Duration(c.ReadTimeout) * time.Second))
+	return c.tp().ReadLine()
 }
 
-// rawRead performs the actual read from the connection, reading each line up to the first occurrence of suffix
-func (c *Conn) ReadUntil(suffix string) (value string, err error) {
-	var reply string
-	reader := bufio.NewReader(c)
-	for err == nil {
-		c.SetDeadline(time.Now().Add(10 * time.Second))
-		reply, err = reader.ReadString('\n')
-		if reply != "" {
-			value = value + reply
-			if len(value) > c.MaxSize && c.MaxSize > 0 {
-				return "", fmt.Errorf("Maximum DATA size exceeded (%v)", c.MaxSize)
-			}
-		}
-		if err != nil {
-			break
-		}
-		if strings.HasSuffix(value, suffix) {
-			break
-		}
-	}
-	return value, err
+// ReadData brokers the special case of SMTP data messages
+func (c *Conn) ReadData() (string, error) {
+	c.SetReadDeadline(time.Now().Add(time.Duration(c.ReadTimeout) * time.Second))
+	lines, err := c.tp().ReadDotLines()
+	return strings.Join(lines, "\n"), err
 }
 
 // WriteSMTP writes a general SMTP line
 func (c *Conn) WriteSMTP(code int, message string) error {
-	c.SetDeadline(time.Now().Add(10 * time.Second))
+	c.SetWriteDeadline(time.Now().Add(time.Duration(c.WriteTimeout) * time.Second))
 	_, err := c.Write([]byte(fmt.Sprintf("%v %v", code, message) + "\r\n"))
 	return err
 }
 
 // WriteEHLO writes an EHLO line, see https://tools.ietf.org/html/rfc2821#section-4.1.1.1
 func (c *Conn) WriteEHLO(message string) error {
-	c.SetDeadline(time.Now().Add(10 * time.Second))
+	c.SetWriteDeadline(time.Now().Add(time.Duration(c.WriteTimeout) * time.Second))
 	_, err := c.Write([]byte(fmt.Sprintf("250-%v", message) + "\r\n"))
 	return err
 }

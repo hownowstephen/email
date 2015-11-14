@@ -175,10 +175,12 @@ func (s *Server) ListenAndServe(addr string) error {
             continue
         }
         go s.HandleSMTP(&Conn{
-            Conn:    conn,
-            IsTLS:   false,
-            Errors:  []error{},
-            MaxSize: s.MaxSize,
+            Conn:         conn,
+            IsTLS:        false,
+            Errors:       []error{},
+            MaxSize:      s.MaxSize,
+            WriteTimeout: 10,
+            ReadTimeout:  10,
         })
         clientID++
 
@@ -372,11 +374,13 @@ ReadLoop:
             tlsConn.SetDeadline(time.Now().Add(10 * time.Second))
             if err := tlsConn.Handshake(); err == nil {
                 conn = &Conn{
-                    Conn:    tlsConn,
-                    IsTLS:   true,
-                    User:    conn.User,
-                    Errors:  conn.Errors,
-                    MaxSize: conn.MaxSize,
+                    Conn:         tlsConn,
+                    IsTLS:        true,
+                    User:         conn.User,
+                    Errors:       conn.Errors,
+                    MaxSize:      conn.MaxSize,
+                    WriteTimeout: conn.WriteTimeout,
+                    ReadTimeout:  conn.ReadTimeout,
                 }
             } else {
                 s.Logger.Printf("Could not TLS handshake:%v", err)

@@ -106,7 +106,7 @@ func (a *AuthPlain) Handle(conn *Conn, params string) (AuthUser, error) {
 
     if strings.TrimSpace(params) == "" {
         conn.WriteSMTP(334, "")
-        if line, err := conn.ReadUntil("\r\n"); err == nil {
+        if line, err := conn.ReadLine(); err == nil {
             username, password, err := a.unpack(line)
             if err != nil {
                 return nil, err
@@ -186,7 +186,7 @@ func (a *AuthCramMd5) Handle(conn *Conn, params string) (AuthUser, error) {
 
     myChallenge := a.challenge()
     conn.WriteSMTP(334, base64.StdEncoding.EncodeToString(myChallenge))
-    if line, err := conn.ReadUntil("\r\n"); err == nil {
+    if line, err := conn.ReadLine(); err == nil {
         if strings.TrimSpace(line) == "*" {
             return nil, ErrAuthCancelled
         } else if user, ok := a.CheckResponse(strings.TrimSpace(line), myChallenge); ok {
