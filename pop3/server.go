@@ -9,6 +9,7 @@ import (
     "net"
     "net/mail"
     "os"
+    "strconv"
     "strings"
 
     "github.com/hownowstephen/email"
@@ -219,6 +220,32 @@ ReadLoop:
 
         case "NOOP":
             conn.WriteOK("")
+
+        // http://tools.ietf.org/html/rfc1939#page-6
+        case "STAT":
+            conn.WriteOK(fmt.Sprintf("%v %v", conn.Maildrop.Count(), conn.Maildrop.Size()))
+
+        // http://tools.ietf.org/html/rfc1939#page-6
+        case "LIST":
+            if args != "" {
+                if id, err := strconv.Atoi(args); err == nil {
+                    if msg := conn.Maildrop.Get(id); msg != nil {
+                        conn.WriteOK(fmt.Sprintf("%v %v", msg.Id(), msg.Size()))
+                    }
+                } else {
+                    conn.WriteERR(fmt.Sprintf("no such message, only %v messages in maildrop", conn.Maildrop.Count()))
+                }
+            } else if conn.Maildrop.Count() > 0 {
+
+                conn.WriteOK(fmt.Sprintf("%v messages (%v octets)", conn.Maildrop.Count(), conn.Maildrop.Size()))
+
+                for _, msg := range conn.Maildrop.Messages() {
+                    conn.WriteOK(fmt.Sprintf("%v %v", msg.Id(), msg.Size()))
+                }
+            } else {
+                conn.WriteERR("No messages")
+            }
+
         case "QUIT":
             conn.WriteOK(fmt.Sprintf("%v POP3 server signing off", s.ServerName))
             break ReadLoop
